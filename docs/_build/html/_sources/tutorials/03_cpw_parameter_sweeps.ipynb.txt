@@ -1,0 +1,232 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Tutorial 3: CPW Parameter Sweeps with `SweepConfig`\n",
+    "\n",
+    "Module: `simpleLOMs.sweeps`\n",
+    "\n",
+    "Use this API when you want tidy **pandas** tables of $f_0$, $\\kappa$, $Q$, or load shifts while varying geometry or circuit parameters one at a time.\n",
+    "\n",
+    "Key ideas:\n",
+    "- `SweepConfig` holds a complete immutable device snapshot\n",
+    "- `sweep()` varies one field via `dataclasses.replace`\n",
+    "- LC models **refit** when `d` or `cpw_params` change; otherwise L/C can be reused for speed\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import skrf as rf\n",
+    "\n",
+    "from simpleLOMs import CPWParams, SweepConfig, sweep, sweep_length, sweep_coupling, sweep_load_frequency\n",
+    "\n",
+    "print(\"Imports OK\")\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 1. Define a base configuration\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "base = SweepConfig(\n",
+    "    cpw_params=CPWParams(\n",
+    "        w=11.7e-6, s=5.1e-6, t=0.0, h=500e-6,\n",
+    "        rho=1e-19, ep_r=11.45, has_metal_backside=True, tand=0.0,\n",
+    "    ),\n",
+    "    freq=rf.Frequency(4e9, 12e9, 10_001, unit=\"Hz\"),\n",
+    "    d=7e-3,\n",
+    "    Cc1=5e-15, Cc2=5e-15,\n",
+    "    Ctog1=1e-14, Ctog2=1e-14,\n",
+    "    Lload1=5e-10, Cload1=6e-13,\n",
+    "    Lload2=5e-10, Cload2=6e-13,\n",
+    "    Z0=50.0,\n",
+    ")\n",
+    "\n",
+    "base\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 2. Sweep resonator length (CPW ground truth)\n",
+    "\n",
+    "`sweep_length` always refits because `d` changes the underlying resonance.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "d_values = np.linspace(5.5e-3, 8.5e-3, 12)\n",
+    "df_length = sweep_length(\n",
+    "    d_values,\n",
+    "    base,\n",
+    "    extract=[\"f0_s11\", \"kappa_s11\", \"Q_s11\"],\n",
+    "    model=\"cpw\",\n",
+    ")\n",
+    "df_length.head()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "fig, ax = plt.subplots(figsize=(6, 4))\n",
+    "ax.plot(df_length[\"d\"] * 1e3, df_length[\"f0_s11\"], \"o-\")\n",
+    "ax.set_xlabel(\"Resonator length (mm)\")\n",
+    "ax.set_ylabel(\"f0 S11 (GHz)\")\n",
+    "ax.set_title(\"CPW resonance vs length\")\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 3. Sweep coupling capacitance with FosterFit\n",
+    "\n",
+    "When sweeping `Cc1`, FosterFit can reuse L/C fitted at the first point (fast).\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "cc_values = np.linspace(2e-15, 15e-15, 10)\n",
+    "df_coupling = sweep_coupling(\n",
+    "    cc_values,\n",
+    "    base,\n",
+    "    extract=[\"f0_s11\", \"kappa_s11\"],\n",
+    "    model=\"foster\",\n",
+    "    symmetric=False,  # sweep Cc1 only; Cc2 stays fixed\n",
+    ")\n",
+    "df_coupling.head()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 4. Sweep load frequency\n",
+    "\n",
+    "`sweep_load_frequency` adjusts `Lload1` (holding `Cload1` fixed) to target a bare load resonance.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "f_targets_hz = np.linspace(2.5e9, 4.5e9, 9)\n",
+    "df_load = sweep_load_frequency(\n",
+    "    f_targets_hz,\n",
+    "    base,\n",
+    "    extract=[\"f0_s11\", \"shift_mode1\", \"shift_mode2\", \"shift_mode3\"],\n",
+    "    model=\"foster\",\n",
+    "    side=\"1\",\n",
+    ")\n",
+    "df_load.head()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "fig, ax = plt.subplots(figsize=(6, 4))\n",
+    "ax.plot(df_load[\"f_load_GHz\"], df_load[\"shift_mode2\"], \"o-\", label=\"mode 2 shift\")\n",
+    "ax.set_xlabel(\"Target load 1 frequency (GHz)\")\n",
+    "ax.set_ylabel(\"Hybridization shift (GHz)\")\n",
+    "ax.legend()\n",
+    "ax.set_title(\"FosterFit loaded-network shifts\")\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 5. Generic `sweep()` API\n",
+    "\n",
+    "Any `SweepConfig` field can be swept explicitly:\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "df_generic = sweep(\n",
+    "    \"Ctog1\",\n",
+    "    np.linspace(5e-15, 30e-15, 8),\n",
+    "    base,\n",
+    "    extract=[\"f0_s11\", \"kappa_s11\"],\n",
+    "    model=\"optimized\",\n",
+    "    refit=False,\n",
+    ")\n",
+    "df_generic.tail(3)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## When to use `sweeps` vs `system` / `load_sweeps`\n",
+    "\n",
+    "| Goal | Module |\n",
+    "|------|--------|\n",
+    "| Compare Foster/Optimized/Analytical against CPW with shifts | `analyze_system` |\n",
+    "| Cc grid at fixed loads | `run_accuracy_sweep` |\n",
+    "| Many load-frequency pairs per device | `run_accuracy_sweep_load_grid` |\n",
+    "| Design exploration tables ($f_0$, $\\kappa$, $Q$, shifts vs one knob) | `sweeps` |\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "pygments_lexer": "ipython3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

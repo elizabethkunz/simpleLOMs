@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>simpleLOMs &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="_static/nameko.css?v=2296cfae" />
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="icon" href="_static/logo.png"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Installation" href="install.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+  <div class="indexwrapper">
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="install.html" title="Installation"
+             accesskey="N">next</a> |</li>
+        <li class="nav-item nav-item-0"><a href="#">simpleLOMs</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <a class="reference internal image-reference" href="_images/logo.png"><img alt="_images/logo.png" class="align-center" src="_images/logo.png" style="width: 200px;" />
+</a>
+<section id="simpleloms">
+<h1>simpleLOMs<a class="headerlink" href="#simpleloms" title="Link to this heading">¶</a></h1>
+<p><strong>Simple Lumped Oscillator Models</strong> for superconducting quantum device design.</p>
+<p>This package provides an easy way to extract <strong>effective lumped oscillator models</strong>, known as lumped element models,
+for distributed elements in superconducting quantum device design.
+In superconducting quantum device design, finite element electromagnetic (FEM)
+simulations are required throughout the design process. These are both
+computationally intensive and time-consuming. <strong>Lumped oscillator models (LOMs)</strong>
+allow for modular FEM simulations of superconducting device designs that can then
+be combined in an effective circuit model. These lumped circuit models are easily
+translated into circuit Hamiltonians. However, accurately incorporating the
+effects of distributed elements such as transmission line resonators is a challenge.</p>
+<p>This package develops and tests a <strong>higher-order effective lumped oscillator model</strong>
+for a coplanar waveguide (CPW) resonator coupled to arbitrary loads. The LOM uses
+capacitances obtained from FEM simulations of individual circuit elements and
+numerical calculations of distributed element impedances to construct an effective
+lumped resonator for each distributed resonator. Importantly, the model takes into
+account loading on both ends of a transmission line. It shows a significant
+improvement over the baseline LOM in predicting the system’s Hamiltonian
+parameters: resonant frequency, coupling to lossy elements, and coupling to other
+resonant modes.</p>
+<section id="contents">
+<h2>Contents<a class="headerlink" href="#contents" title="Link to this heading">¶</a></h2>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="install.html#install-from-pypi">Install from PyPI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="install.html#install-from-source">Install from source</a></li>
+<li class="toctree-l2"><a class="reference internal" href="install.html#building-the-documentation-locally">Building the documentation locally</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs">Package</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#parameters">Parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.system">System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.analysis">Analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.models">Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.elements">Elements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.networks.cpw">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.plotting">Plotting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.sweeps">Sweeps</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.utils">Utilities</a></li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/01_fit_lc_models.html">Tutorial 1: Fitting LC Models to a CPW</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/02_sweep_accuracies.html">Tutorial 2: Accuracy Sweeps</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/03_cpw_parameter_sweeps.html">Tutorial 3: CPW Parameter Sweeps with <code class="docutils literal notranslate"><span class="pre">SweepConfig</span></code></a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/04_compare_to_simulations.html">Tutorial 4: Comparing to EM Simulations (coming soon)</a></li>
+</ul>
+</div>
+</section>
+<section id="indices-and-tables">
+<h2>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="#">
+              <img class="logo" src="_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p>
+  <div>
+    <h3><a href="#">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">simpleLOMs</a><ul>
+<li><a class="reference internal" href="#contents">Contents</a><ul>
+</ul>
+</li>
+<li><a class="reference internal" href="#indices-and-tables">Indices and tables</a></li>
+</ul>
+</li>
+</ul>
+
+  </div><h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation index</a><ul>
+      <li>Next: <a href="install.html" title="next chapter">Installation</a></li>
+  </ul></li>
+</ul>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/index.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </div>
+  
+  </body>
+</html>

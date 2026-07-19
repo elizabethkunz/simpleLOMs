@@ -1,0 +1,20 @@
+Tutorials
+=========
+
+Step-by-step guides for using **simpleLOMs**.
+
+.. toctree::
+   :maxdepth: 1
+
+   01_fit_lc_models
+   02_sweep_accuracies
+   03_cpw_parameter_sweeps
+   04_compare_to_simulations
+
+Overview
+--------
+
+1. **Fitting LC models** — single-device workflow with ``analyze_system()`` (circle-fit S11/S22 metrics and hybridization shifts).
+2. **Accuracy sweeps** — ``run_accuracy_sweep`` for coupling grids and ``run_accuracy_sweep_load_grid`` for load-frequency batches.
+3. **Parameter sweeps** — design exploration with ``SweepConfig`` and ``sweeps.py``.
+4. **EM comparison** — placeholder for Touchstone / FEM validation (coming soon).

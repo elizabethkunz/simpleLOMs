@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.params &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../_static/nameko.css?v=2296cfae" />
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.params</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.params</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">params.py</span>
+<span class="sd">---------</span>
+<span class="sd">Shared parameter dataclasses used across simpleLOMs.</span>
+
+<span class="sd">Here we define CPWParams once.  Every function that needs CPW geometry</span>
+<span class="sd">accepts a single CPWParams.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+
+
+<div class="viewcode-block" id="CPWParams">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.CPWParams">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CPWParams</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Physical geometry and material parameters for a Coplanar Waveguide (CPW).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    w : float</span>
+<span class="sd">        Center conductor width (m).  Default 11.7 µm.</span>
+<span class="sd">    s : float</span>
+<span class="sd">        Gap spacing between center conductor and ground plane (m).</span>
+<span class="sd">        Default 5.1 µm.</span>
+<span class="sd">    t : float</span>
+<span class="sd">        Metal thickness (m).  Set to 0 to ignore (for an ideal thin film). This quantity is generally on the order of 100-200 nm.</span>
+<span class="sd">    h : float</span>
+<span class="sd">        Substrate height (m).  Default 500 µm.</span>
+<span class="sd">    rho : float</span>
+<span class="sd">        Metal resistivity (Ω·m).  Set near 0 for superconducting limit.</span>
+<span class="sd">    ep_r : float</span>
+<span class="sd">        Substrate relative permittivity.  Defaults to 11.45 (ultracold silicon).</span>
+<span class="sd">    has_metal_backside : bool</span>
+<span class="sd">        Whether the substrate has a metal ground plane on its back side.</span>
+<span class="sd">    tand : float</span>
+<span class="sd">        Loss tangent of the substrate.  Set to 0 for a lossless superconducting circuit.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Use the defaults (ultracold silicon chip):</span>
+<span class="sd">        &gt;&gt;&gt; cpw = CPWParams()</span>
+
+<span class="sd">    Override just the substrate:</span>
+<span class="sd">        &gt;&gt;&gt; cpw = CPWParams(ep_r=11.9, has_metal_backside=False)</span>
+
+<span class="sd">    Pass into a network builder:</span>
+<span class="sd">        &gt;&gt;&gt; net = cpw_resonator_network_2port(freq, d=7e-3, cpw_params=cpw, ...)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">w</span><span class="p">:</span>                <span class="nb">float</span> <span class="o">=</span> <span class="mf">11.7e-6</span>   <span class="c1"># center conductor width</span>
+    <span class="n">s</span><span class="p">:</span>                <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.1e-6</span>    <span class="c1"># gap spacing</span>
+    <span class="n">t</span><span class="p">:</span>                <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>       <span class="c1"># metal thickness (0 = ideal)</span>
+    <span class="n">h</span><span class="p">:</span>                <span class="nb">float</span> <span class="o">=</span> <span class="mf">500e-6</span>    <span class="c1"># substrate height</span>
+    <span class="n">rho</span><span class="p">:</span>              <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-19</span>     <span class="c1"># resistivity (near-zero = superconducting)</span>
+    <span class="n">ep_r</span><span class="p">:</span>             <span class="nb">float</span> <span class="o">=</span> <span class="mf">11.45</span>     <span class="c1"># relative permittivity (ultracold Si)</span>
+    <span class="n">has_metal_backside</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>     <span class="c1"># metallic backside ground plane</span>
+    <span class="n">tand</span><span class="p">:</span>             <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>       <span class="c1"># loss tangent</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../index.html">
+              <img class="logo" src="../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation index</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

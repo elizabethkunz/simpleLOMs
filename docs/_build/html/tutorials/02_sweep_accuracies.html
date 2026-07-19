@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Tutorial 2: Accuracy Sweeps &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../_static/nameko.css?v=2296cfae" />
+    <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="icon" href="../_static/logo.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Tutorial 3: CPW Parameter Sweeps with SweepConfig" href="03_cpw_parameter_sweeps.html" />
+    <link rel="prev" title="Tutorial 1: Fitting LC Models to a CPW" href="01_fit_lc_models.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="03_cpw_parameter_sweeps.html" title="Tutorial 3: CPW Parameter Sweeps with SweepConfig"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="01_fit_lc_models.html" title="Tutorial 1: Fitting LC Models to a CPW"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">simpleLOMs</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Tutorial 2: Accuracy Sweeps</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="Tutorial-2:-Accuracy-Sweeps">
+<h1>Tutorial 2: Accuracy Sweeps<a class="headerlink" href="#Tutorial-2:-Accuracy-Sweeps" title="Link to this heading">¶</a></h1>
+<p>This tutorial covers the two sweep layers in the refactored codebase:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Use when</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">simpleLOMs.system</span></code></p></td>
+<td><p>One load configuration; sweep device parameters (e.g. <code class="docutils literal notranslate"><span class="pre">Cc1</span></code>, <code class="docutils literal notranslate"><span class="pre">Cc2</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">simpleLOMs.load_sweeps</span></code></p></td>
+<td><p>Same device fit once; sweep many <strong>load frequencies</strong></p></td>
+</tr>
+</tbody>
+</table>
+<p>Both use circle-fit metrics from <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code>.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CPWParams</span><span class="p">,</span>
+    <span class="n">analyze_system</span><span class="p">,</span>
+    <span class="n">run_accuracy_sweep</span><span class="p">,</span>
+    <span class="n">analyze_system_load_grid</span><span class="p">,</span>
+    <span class="n">run_accuracy_sweep_load_grid</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.plotting</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_error_heatmap_trio</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Imports OK&quot;</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<hr class="docutils" />
+<section id="1.-Shared-device-setup">
+<h2>1. Shared device setup<a class="headerlink" href="#1.-Shared-device-setup" title="Link to this heading">¶</a></h2>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cpw_params</span> <span class="o">=</span> <span class="n">CPWParams</span><span class="p">(</span>
+    <span class="n">w</span><span class="o">=</span><span class="mf">11.7e-6</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mf">5.1e-6</span><span class="p">,</span> <span class="n">t</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="mf">500e-6</span><span class="p">,</span>
+    <span class="n">rho</span><span class="o">=</span><span class="mf">1e-19</span><span class="p">,</span> <span class="n">ep_r</span><span class="o">=</span><span class="mf">11.45</span><span class="p">,</span> <span class="n">has_metal_backside</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">tand</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="mf">5e9</span><span class="p">,</span> <span class="mf">10e9</span><span class="p">,</span> <span class="mi">300_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+
+<span class="n">fixed</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+    <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+    <span class="n">d</span><span class="o">=</span><span class="mf">7e-3</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="o">=</span><span class="mf">1e-14</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="o">=</span><span class="mf">1e-14</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="o">=</span><span class="mf">5e-10</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="o">=</span><span class="mf">6e-13</span><span class="p">,</span>
+    <span class="n">Lload2</span><span class="o">=</span><span class="mf">5e-10</span><span class="p">,</span>
+    <span class="n">Cload2</span><span class="o">=</span><span class="mf">6e-13</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
+    <span class="n">analytical_Z0</span><span class="o">=</span><span class="mf">45.926</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">load1_freqs_hz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">2.5e9</span><span class="p">,</span> <span class="mf">3.0e9</span><span class="p">,</span> <span class="mf">3.5e9</span><span class="p">])</span>
+<span class="n">load2_freqs_hz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">3.5e9</span><span class="p">,</span> <span class="mf">4.0e9</span><span class="p">])</span>
+<br/></pre></div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="2.-Parameter-sweep-with-run_accuracy_sweep">
+<h2>2. Parameter sweep with <code class="docutils literal notranslate"><span class="pre">run_accuracy_sweep</span></code><a class="headerlink" href="#2.-Parameter-sweep-with-run_accuracy_sweep" title="Link to this heading">¶</a></h2>
+<p>Each grid point calls <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> with <strong>fixed</strong> <code class="docutils literal notranslate"><span class="pre">Lload1/Cload1/Lload2/Cload2</span></code>.</p>
+<p>We use a small <code class="docutils literal notranslate"><span class="pre">Cc1</span> <span class="pre">×</span> <span class="pre">Cc2</span></code> grid so the notebook runs quickly.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sweep_params</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Cc1&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">3e-15</span><span class="p">,</span> <span class="mf">12e-15</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+    <span class="s2">&quot;Cc2&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">3e-15</span><span class="p">,</span> <span class="mf">12e-15</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="n">results_grid</span> <span class="o">=</span> <span class="n">run_accuracy_sweep</span><span class="p">(</span>
+    <span class="n">sweep_params</span><span class="o">=</span><span class="n">sweep_params</span><span class="p">,</span>
+    <span class="n">fixed_params</span><span class="o">=</span><span class="n">fixed</span><span class="p">,</span>
+    <span class="n">skip_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Flatten nested grid for plotting helpers</span>
+<span class="n">flat</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">results_grid</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">row</span> <span class="k">if</span> <span class="n">r</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Collected </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">flat</span><span class="p">)</span><span class="si">}</span><span class="s2"> successful sweep points&quot;</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<section id="2a.-Heatmap-of-circle-fit-shift-errors">
+<h3>2a. Heatmap of circle-fit shift errors<a class="headerlink" href="#2a.-Heatmap-of-circle-fit-shift-errors" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">plot_error_heatmap_trio</span></code> expects a 2D nested list of <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> result dicts.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_error_heatmap_trio</span><span class="p">(</span>
+    <span class="n">results_grid</span><span class="p">,</span>
+    <span class="n">param1_values</span><span class="o">=</span><span class="n">sweep_params</span><span class="p">[</span><span class="s2">&quot;Cc1&quot;</span><span class="p">],</span>
+    <span class="n">param2_values</span><span class="o">=</span><span class="n">sweep_params</span><span class="p">[</span><span class="s2">&quot;Cc2&quot;</span><span class="p">],</span>
+    <span class="n">param1_label</span><span class="o">=</span><span class="s2">&quot;Cc1&quot;</span><span class="p">,</span>
+    <span class="n">param2_label</span><span class="o">=</span><span class="s2">&quot;Cc2&quot;</span><span class="p">,</span>
+    <span class="n">param1_scale</span><span class="o">=</span><span class="mf">1e15</span><span class="p">,</span>
+    <span class="n">param2_scale</span><span class="o">=</span><span class="mf">1e15</span><span class="p">,</span>
+    <span class="n">param1_unit</span><span class="o">=</span><span class="s2">&quot;fF&quot;</span><span class="p">,</span>
+    <span class="n">param2_unit</span><span class="o">=</span><span class="s2">&quot;fF&quot;</span><span class="p">,</span>
+    <span class="n">metric</span><span class="o">=</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">&quot;S11 frequency error vs coupling capacitances&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Circle-fit shift errors are stored directly on each result dict</span>
+<span class="n">example</span> <span class="o">=</span> <span class="n">flat</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Optimized CF shift errors (%):&quot;</span><span class="p">,</span> <span class="n">example</span><span class="p">[</span><span class="s2">&quot;Optimized shift errors CF (%)&quot;</span><span class="p">])</span>
+<br/></pre></div>
+</div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="3.-Load-frequency-grid-with-load_sweeps">
+<h2>3. Load-frequency grid with <code class="docutils literal notranslate"><span class="pre">load_sweeps</span></code><a class="headerlink" href="#3.-Load-frequency-grid-with-load_sweeps" title="Link to this heading">¶</a></h2>
+<p>When you need to evaluate many <code class="docutils literal notranslate"><span class="pre">(f_load1,</span> <span class="pre">f_load2)</span></code> combinations without refitting models each time:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">fit_models_once</span></code> (inside <code class="docutils literal notranslate"><span class="pre">analyze_system_load_grid</span></code>) fits CPW + LC models once</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">evaluate_load_grid</span></code> builds loaded networks for every frequency pair</p></li>
+<li><p>Results live in <code class="docutils literal notranslate"><span class="pre">load_sweep_results</span></code> (one dict per load combo)</p></li>
+</ol>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">load_grid_result</span> <span class="o">=</span> <span class="n">analyze_system_load_grid</span><span class="p">(</span>
+    <span class="o">**</span><span class="n">fixed</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="o">=</span><span class="mf">5e-15</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="o">=</span><span class="mf">5e-15</span><span class="p">,</span>
+    <span class="n">load1_freqs_hz</span><span class="o">=</span><span class="n">load1_freqs_hz</span><span class="p">,</span>
+    <span class="n">load2_freqs_hz</span><span class="o">=</span><span class="n">load2_freqs_hz</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">combos</span> <span class="o">=</span> <span class="n">load_grid_result</span><span class="p">[</span><span class="s2">&quot;load_sweep_results&quot;</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">combos</span><span class="p">)</span><span class="si">}</span><span class="s2"> load combinations&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;First combo keys:&quot;</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">combos</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">())[:</span><span class="mi">6</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Optimized CF shift errors:&quot;</span><span class="p">,</span> <span class="n">combos</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;opt_shift_errors_cf&quot;</span><span class="p">])</span>
+<br/></pre></div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="4.-Coupling-sweep-+-load-grid-with-run_accuracy_sweep_load_grid">
+<h2>4. Coupling sweep + load grid with <code class="docutils literal notranslate"><span class="pre">run_accuracy_sweep_load_grid</span></code><a class="headerlink" href="#4.-Coupling-sweep-+-load-grid-with-run_accuracy_sweep_load_grid" title="Link to this heading">¶</a></h2>
+<p>This is the batch workflow used for publication-style accuracy maps. Use <code class="docutils literal notranslate"><span class="pre">n_jobs&gt;1</span></code> for parallel execution on large grids.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Small demo grid — increase resolution for production runs</span>
+<span class="n">sweep_params_lg</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Cc1&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">4e-15</span><span class="p">,</span> <span class="mf">10e-15</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+    <span class="s2">&quot;Cc2&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">4e-15</span><span class="p">,</span> <span class="mf">10e-15</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="n">results_load_grid</span> <span class="o">=</span> <span class="n">run_accuracy_sweep_load_grid</span><span class="p">(</span>
+    <span class="n">sweep_params</span><span class="o">=</span><span class="n">sweep_params_lg</span><span class="p">,</span>
+    <span class="n">fixed_params</span><span class="o">=</span><span class="n">fixed</span><span class="p">,</span>
+    <span class="n">load1_freqs_hz</span><span class="o">=</span><span class="n">load1_freqs_hz</span><span class="p">,</span>
+    <span class="n">load2_freqs_hz</span><span class="o">=</span><span class="n">load2_freqs_hz</span><span class="p">,</span>
+    <span class="n">skip_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">n_jobs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">flat_lg</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">results_load_grid</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">row</span> <span class="k">if</span> <span class="n">r</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Collected </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">flat_lg</span><span class="p">)</span><span class="si">}</span><span class="s2"> Cc points&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Example nested load combos:&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">flat_lg</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;load_sweep_results&quot;</span><span class="p">]))</span>
+<br/></pre></div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="Notes">
+<h2>Notes<a class="headerlink" href="#Notes" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Flat <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> results expose human-readable keys like <code class="docutils literal notranslate"><span class="pre">&quot;Optimized</span> <span class="pre">shift</span> <span class="pre">errors</span> <span class="pre">CF</span> <span class="pre">(%)&quot;</span></code>.</p></li>
+<li><p>Nested <code class="docutils literal notranslate"><span class="pre">load_sweep_results</span></code> entries use snake_case keys like <code class="docutils literal notranslate"><span class="pre">opt_shift_errors_cf</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">figure_graphs.py</span></code> accepts <strong>both</strong> schemas when building heatmaps from saved JSON.</p></li>
+</ul>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p>
+  <div>
+    <h3><a href="../index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">Tutorial 2: Accuracy Sweeps</a><ul>
+<li><a class="reference internal" href="#1.-Shared-device-setup">1. Shared device setup</a></li>
+<li><a class="reference internal" href="#2.-Parameter-sweep-with-run_accuracy_sweep">2. Parameter sweep with <code class="docutils literal notranslate"><span class="pre">run_accuracy_sweep</span></code></a><ul>
+<li><a class="reference internal" href="#2a.-Heatmap-of-circle-fit-shift-errors">2a. Heatmap of circle-fit shift errors</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#3.-Load-frequency-grid-with-load_sweeps">3. Load-frequency grid with <code class="docutils literal notranslate"><span class="pre">load_sweeps</span></code></a></li>
+<li><a class="reference internal" href="#4.-Coupling-sweep-+-load-grid-with-run_accuracy_sweep_load_grid">4. Coupling sweep + load grid with <code class="docutils literal notranslate"><span class="pre">run_accuracy_sweep_load_grid</span></code></a></li>
+<li><a class="reference internal" href="#Notes">Notes</a></li>
+</ul>
+</li>
+</ul>
+
+  </div><h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation index</a><ul>
+      <li>Previous: <a href="01_fit_lc_models.html" title="previous chapter">Tutorial 1: Fitting LC Models to a CPW</a></li>
+      <li>Next: <a href="03_cpw_parameter_sweeps.html" title="next chapter">Tutorial 3: CPW Parameter Sweeps with <code class="docutils literal notranslate"><span class="pre">SweepConfig</span></code></a></li>
+  </ul></li>
+</ul>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/tutorials/02_sweep_accuracies.ipynb.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

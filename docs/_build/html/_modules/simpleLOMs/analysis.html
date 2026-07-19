@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.analysis &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../_static/nameko.css?v=2296cfae" />
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.analysis</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.analysis</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">analysis.py</span>
+<span class="sd">-----------</span>
+<span class="sd">Pure numerical analysis functions for extracting resonance frequencies</span>
+<span class="sd">and linewidths from S-parameter networks.</span>
+
+<span class="sd">None of these functions build networks or do optimization — they only</span>
+<span class="sd">inspect existing rf.Network objects.  This makes them easy to test</span>
+<span class="sd">independently and reuse across models.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.signal</span><span class="w"> </span><span class="kn">import</span> <span class="n">savgol_filter</span><span class="p">,</span> <span class="n">find_peaks</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fit_circle_kasa</span><span class="p">(</span><span class="n">z</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">complex</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Algebraic Kasa circle fit to complex points z = x + i y.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    center : complex</span>
+<span class="sd">        Fitted circle center.</span>
+<span class="sd">    radius : float</span>
+<span class="sd">        Fitted circle radius.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">imag</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">x</span><span class="p">)])</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">x</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">y</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="n">coeffs</span><span class="p">,</span> <span class="o">*</span><span class="n">_</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">lstsq</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b_</span><span class="p">,</span> <span class="n">c</span> <span class="o">=</span> <span class="n">coeffs</span>
+
+    <span class="n">xc</span> <span class="o">=</span> <span class="o">-</span><span class="n">a</span> <span class="o">/</span> <span class="mf">2.0</span>
+    <span class="n">yc</span> <span class="o">=</span> <span class="o">-</span><span class="n">b_</span> <span class="o">/</span> <span class="mf">2.0</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">xc</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">yc</span><span class="o">**</span><span class="mi">2</span> <span class="o">-</span> <span class="n">c</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">xc</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">yc</span><span class="p">,</span> <span class="n">r</span>
+
+
+<div class="viewcode-block" id="circle_fit_f0_kappa">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.circle_fit_f0_kappa">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">circle_fit_f0_kappa</span><span class="p">(</span>
+    <span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">smooth_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mi">51</span><span class="p">,</span>
+    <span class="n">smooth_polyorder</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Extract resonance frequency (f0) and linewidth (kappa) from a circle fit</span>
+<span class="sd">    to S[m,n] in the complex plane (reflection S11/S22).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    f0 : float</span>
+<span class="sd">        Resonance frequency in Hz.</span>
+<span class="sd">    kappa : float</span>
+<span class="sd">        Linewidth (FWHM of the angular velocity peak) in Hz.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Need ≥5 frequency points for circle-fit.&quot;</span><span class="p">)</span>
+
+    <span class="n">center</span><span class="p">,</span> <span class="n">radius</span> <span class="o">=</span> <span class="n">_fit_circle_kasa</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">radius</span><span class="p">)</span> <span class="ow">or</span> <span class="n">radius</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Circle fit failed: non-physical radius.&quot;</span><span class="p">)</span>
+
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unwrap</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">angle</span><span class="p">(</span><span class="n">s</span> <span class="o">-</span> <span class="n">center</span><span class="p">))</span>
+
+    <span class="n">sw</span> <span class="o">=</span> <span class="n">smooth_window</span>
+    <span class="k">if</span> <span class="n">sw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sw</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">):</span>
+            <span class="n">sw</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sw</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="n">sw</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">sw</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">sw</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">sw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">savgol_filter</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">window_length</span><span class="o">=</span><span class="n">sw</span><span class="p">,</span> <span class="n">polyorder</span><span class="o">=</span><span class="n">smooth_polyorder</span><span class="p">)</span>
+
+    <span class="n">dtheta_df</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
+
+    <span class="n">idx_peak</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dtheta_df</span><span class="p">))</span>
+    <span class="n">f0</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">idx_peak</span><span class="p">])</span>
+
+    <span class="n">half_max</span> <span class="o">=</span> <span class="n">dtheta_df</span><span class="p">[</span><span class="n">idx_peak</span><span class="p">]</span> <span class="o">/</span> <span class="mf">2.0</span>
+    <span class="n">above</span> <span class="o">=</span> <span class="n">dtheta_df</span> <span class="o">&gt;</span> <span class="n">half_max</span>
+
+    <span class="n">crossings</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">above</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)))[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">left_cross</span> <span class="o">=</span> <span class="n">crossings</span><span class="p">[</span><span class="n">crossings</span> <span class="o">&lt;</span> <span class="n">idx_peak</span><span class="p">]</span>
+    <span class="n">right_cross</span> <span class="o">=</span> <span class="n">crossings</span><span class="p">[</span><span class="n">crossings</span> <span class="o">&gt;</span> <span class="n">idx_peak</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">left_cross</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">right_cross</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">idx_peak</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">idx_peak</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">kappa</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">df</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kappa</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">iL</span> <span class="o">=</span> <span class="n">left_cross</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">iR</span> <span class="o">=</span> <span class="n">right_cross</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_interp</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+            <span class="n">f0_</span><span class="p">,</span> <span class="n">f1_</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">f</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="n">y0_</span><span class="p">,</span> <span class="n">y1_</span> <span class="o">=</span> <span class="n">dtheta_df</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">dtheta_df</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">y1_</span> <span class="o">==</span> <span class="n">y0_</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">f0_</span> <span class="o">+</span> <span class="n">f1_</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f0_</span> <span class="o">+</span> <span class="p">(</span><span class="n">half_max</span> <span class="o">-</span> <span class="n">y0_</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">f1_</span> <span class="o">-</span> <span class="n">f0_</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">y1_</span> <span class="o">-</span> <span class="n">y0_</span><span class="p">)</span>
+
+        <span class="n">kappa</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_interp</span><span class="p">(</span><span class="n">iR</span><span class="p">)</span> <span class="o">-</span> <span class="n">_interp</span><span class="p">(</span><span class="n">iL</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">f0</span><span class="p">,</span> <span class="n">kappa</span></div>
+
+
+
+<div class="viewcode-block" id="circle_fit_modes">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.circle_fit_modes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">circle_fit_modes</span><span class="p">(</span>
+    <span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n_modes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">prominence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">min_spacing_hz</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">smooth_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mi">51</span><span class="p">,</span>
+    <span class="n">smooth_polyorder</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Find multiple resonance modes in S[m,n] using the reflection circle fit.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    f0s : np.ndarray</span>
+<span class="sd">        Mode frequencies in Hz, length n_modes (NaN-padded).</span>
+<span class="sd">    kappas : np.ndarray</span>
+<span class="sd">        Mode linewidths in Hz, length n_modes (NaN-padded).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">min_spacing_hz</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">min_spacing_hz</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="mi">10</span> <span class="o">*</span> <span class="n">n_modes</span><span class="p">)</span>
+    <span class="n">min_distance_pts</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">min_spacing_hz</span> <span class="o">/</span> <span class="n">df</span><span class="p">))</span>
+
+    <span class="n">center</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_fit_circle_kasa</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unwrap</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">angle</span><span class="p">(</span><span class="n">s</span> <span class="o">-</span> <span class="n">center</span><span class="p">))</span>
+
+    <span class="n">sw</span> <span class="o">=</span> <span class="n">smooth_window</span>
+    <span class="k">if</span> <span class="n">sw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sw</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">):</span>
+            <span class="n">sw</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sw</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="n">sw</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">sw</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">sw</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">sw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">savgol_filter</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">window_length</span><span class="o">=</span><span class="n">sw</span><span class="p">,</span> <span class="n">polyorder</span><span class="o">=</span><span class="n">smooth_polyorder</span><span class="p">)</span>
+
+    <span class="n">trace</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">prominence</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">prominence</span> <span class="o">=</span> <span class="mf">0.0005</span> <span class="o">*</span> <span class="p">(</span><span class="n">trace</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">trace</span><span class="o">.</span><span class="n">min</span><span class="p">())</span>
+
+    <span class="n">peak_indices</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_peaks</span><span class="p">(</span>
+        <span class="n">trace</span><span class="p">,</span>
+        <span class="n">prominence</span><span class="o">=</span><span class="n">prominence</span><span class="p">,</span>
+        <span class="n">distance</span><span class="o">=</span><span class="n">min_distance_pts</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">peak_indices</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">n_modes</span><span class="p">:</span>
+        <span class="n">heights</span> <span class="o">=</span> <span class="n">trace</span><span class="p">[</span><span class="n">peak_indices</span><span class="p">]</span>
+        <span class="n">top</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">heights</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">][:</span><span class="n">n_modes</span><span class="p">]</span>
+        <span class="n">peak_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">peak_indices</span><span class="p">[</span><span class="n">top</span><span class="p">])</span>
+
+    <span class="n">f0s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n_modes</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="n">kappas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n_modes</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">pidx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">peak_indices</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="o">&gt;=</span> <span class="n">n_modes</span><span class="p">:</span>
+            <span class="k">break</span>
+
+        <span class="n">half_w_pts</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">min_distance_pts</span><span class="p">))</span>
+        <span class="n">i_lo</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pidx</span> <span class="o">-</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">half_w_pts</span><span class="p">)</span>
+        <span class="n">i_hi</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">pidx</span> <span class="o">+</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">half_w_pts</span><span class="p">)</span>
+
+        <span class="n">local_freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="o">.</span><span class="n">from_f</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">i_lo</span><span class="p">:</span><span class="n">i_hi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+        <span class="n">local_s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="n">i_lo</span><span class="p">:</span><span class="n">i_hi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">local_s</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="n">f0s</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">pidx</span><span class="p">])</span>
+            <span class="n">kappas</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">local_ntwk</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">(</span>
+            <span class="n">frequency</span><span class="o">=</span><span class="n">local_freq</span><span class="p">,</span>
+            <span class="n">s</span><span class="o">=</span><span class="n">local_s</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">f0_loc</span><span class="p">,</span> <span class="n">kappa_loc</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span>
+                <span class="n">local_ntwk</span><span class="p">,</span>
+                <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">smooth_window</span><span class="o">=</span><span class="n">smooth_window</span><span class="p">,</span>
+                <span class="n">smooth_polyorder</span><span class="o">=</span><span class="n">smooth_polyorder</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">f0s</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">f0_loc</span>
+            <span class="n">kappas</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">kappa_loc</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">f0s</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">pidx</span><span class="p">])</span>
+            <span class="n">kappas</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">f0s</span><span class="p">,</span> <span class="n">kappas</span></div>
+
+
+
+<div class="viewcode-block" id="stitch_shifted_freqs">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.stitch_shifted_freqs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">stitch_shifted_freqs</span><span class="p">(</span>
+    <span class="o">*</span><span class="n">arrays</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">dedup_tol_ghz</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
+    <span class="n">return_sources</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Merge S11/S22 mode frequency lists, deduplicating nearby modes.&quot;&quot;&quot;</span>
+    <span class="n">tagged</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">src_idx</span><span class="p">,</span> <span class="n">arr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">arrays</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">freq</span> <span class="ow">in</span> <span class="n">arr</span><span class="p">[</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">arr</span><span class="p">)]:</span>
+            <span class="n">tagged</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">freq</span><span class="p">,</span> <span class="n">src_idx</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">tagged</span><span class="p">:</span>
+        <span class="n">empty</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">empty</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">object</span><span class="p">))</span> <span class="k">if</span> <span class="n">return_sources</span> <span class="k">else</span> <span class="n">empty</span>
+
+    <span class="n">tagged</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">tagged</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">merged_freqs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">merged_sources</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cluster_freqs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tagged</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+    <span class="n">cluster_srcs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tagged</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span>
+
+    <span class="k">for</span> <span class="n">freq</span><span class="p">,</span> <span class="n">src</span> <span class="ow">in</span> <span class="n">tagged</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="k">if</span> <span class="n">freq</span> <span class="o">-</span> <span class="n">cluster_freqs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">dedup_tol_ghz</span><span class="p">:</span>
+            <span class="n">cluster_freqs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+            <span class="n">cluster_srcs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">merged_freqs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cluster_freqs</span><span class="p">)))</span>
+            <span class="n">merged_sources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">cluster_srcs</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="n">cluster_srcs</span><span class="o">.</span><span class="n">count</span><span class="p">))</span>
+            <span class="n">cluster_freqs</span> <span class="o">=</span> <span class="p">[</span><span class="n">freq</span><span class="p">]</span>
+            <span class="n">cluster_srcs</span> <span class="o">=</span> <span class="p">[</span><span class="n">src</span><span class="p">]</span>
+
+    <span class="n">merged_freqs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cluster_freqs</span><span class="p">)))</span>
+    <span class="n">merged_sources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">cluster_srcs</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="n">cluster_srcs</span><span class="o">.</span><span class="n">count</span><span class="p">))</span>
+
+    <span class="n">freqs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">merged_freqs</span><span class="p">)</span>
+    <span class="n">sources</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;s11&quot;</span> <span class="k">if</span> <span class="n">s</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s2">&quot;s22&quot;</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">merged_sources</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">object</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">freqs</span><span class="p">,</span> <span class="n">sources</span><span class="p">)</span> <span class="k">if</span> <span class="n">return_sources</span> <span class="k">else</span> <span class="n">freqs</span></div>
+
+
+
+<div class="viewcode-block" id="resonance_circle_fit">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonance_circle_fit">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonance_circle_fit</span><span class="p">(</span>
+    <span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">smooth_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mi">51</span><span class="p">,</span>
+    <span class="n">smooth_polyorder</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Estimate resonance frequency from a circle fit to S[m,n] in the complex plane.</span>
+
+<span class="sd">    Strategy</span>
+<span class="sd">    --------</span>
+<span class="sd">    1. Fit a circle to the complex trace S[m,n](f).</span>
+<span class="sd">    2. Compute the angle of each point about the fitted center.</span>
+<span class="sd">    3. Take the frequency where |d(theta)/df| is largest.</span>
+
+<span class="sd">    This is usually a good reflection-based estimator for S11/S22.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ntwk : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices.</span>
+<span class="sd">    smooth_window : int or None</span>
+<span class="sd">        Optional Savitzky-Golay smoothing window for theta before differentiation.</span>
+<span class="sd">        Must be odd if provided.</span>
+<span class="sd">    smooth_polyorder : int</span>
+<span class="sd">        Polynomial order for Savitzky-Golay smoothing.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Resonance frequency in Hz.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f0</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span>
+        <span class="n">ntwk</span><span class="p">,</span>
+        <span class="n">m</span><span class="o">=</span><span class="n">m</span><span class="p">,</span>
+        <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+        <span class="n">smooth_window</span><span class="o">=</span><span class="n">smooth_window</span><span class="p">,</span>
+        <span class="n">smooth_polyorder</span><span class="o">=</span><span class="n">smooth_polyorder</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">f0</span></div>
+
+
+
+<div class="viewcode-block" id="resonance">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonance</span><span class="p">(</span>
+    <span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">use_max</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;min_re&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Estimate resonance frequency from S[m,n].</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ntwk : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices (0-based).</span>
+<span class="sd">    use_max : bool</span>
+<span class="sd">        Only used for method=&#39;min_re&#39;. If True, find frequency of maximum</span>
+<span class="sd">        Re(S) instead of minimum.</span>
+<span class="sd">    method : str</span>
+<span class="sd">        Resonance estimator. Supported:</span>
+<span class="sd">            - &#39;min_re&#39;     : min/max of Re(S)</span>
+<span class="sd">            - &#39;circle_fit&#39; : circle fit in complex plane</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Resonance frequency in Hz.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;circle_fit&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">resonance_circle_fit</span><span class="p">(</span><span class="n">ntwk</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;min_re&quot;</span><span class="p">:</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+        <span class="n">re_s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">])</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">re_s</span><span class="p">)</span> <span class="k">if</span> <span class="n">use_max</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">re_s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown resonance method: </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<span class="c1"># def resonance(ntwk: rf.Network, m: int = 0, n: int = 0, use_max: bool = False) -&gt; float:</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     Estimate resonance frequency from the real part of S[m,n].</span>
+
+<span class="c1">#     By default returns the frequency of the minimum of Re(S), which</span>
+<span class="c1">#     corresponds to the resonance dip in S11/S22.  Set use_max=True</span>
+<span class="c1">#     for transmission peaks.</span>
+
+<span class="c1">#     Parameters</span>
+<span class="c1">#     ----------</span>
+<span class="c1">#     ntwk : rf.Network</span>
+<span class="c1">#     m, n : int</span>
+<span class="c1">#         S-parameter indices (0-based).</span>
+<span class="c1">#     use_max : bool</span>
+<span class="c1">#         If True, find frequency of maximum Re(S) instead of minimum.</span>
+
+<span class="c1">#     Returns</span>
+<span class="c1">#     -------</span>
+<span class="c1">#     float</span>
+<span class="c1">#         Resonance frequency in Hz.</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     f    = ntwk.frequency.f</span>
+<span class="c1">#     re_s = np.real(ntwk.s[:, m, n])</span>
+<span class="c1">#     idx  = np.argmax(re_s) if use_max else np.argmin(re_s)</span>
+<span class="c1">#     return float(f[idx])</span>
+
+
+<div class="viewcode-block" id="resonances">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonances">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonances</span><span class="p">(</span>
+    <span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n_modes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;min_re&quot;</span><span class="p">,</span>
+    <span class="n">prominence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">min_spacing_hz</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Estimate resonance frequencies for multiple modes from S[m,n].</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ntwk : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices (0-based).</span>
+<span class="sd">    n_modes : int</span>
+<span class="sd">        Number of resonant modes to find.</span>
+<span class="sd">    method : str</span>
+<span class="sd">        Resonance estimator. Supported:</span>
+<span class="sd">            - &#39;min_re&#39;     : finds n_modes minima of Re(S)</span>
+<span class="sd">            - &#39;circle_fit&#39; : finds n_modes peaks of |dθ/df| from circle fit</span>
+<span class="sd">    prominence : float, optional</span>
+<span class="sd">        Minimum peak prominence passed to scipy.signal.find_peaks.</span>
+<span class="sd">        If None, defaults to 0.1 * (max - min) of the trace being searched.</span>
+<span class="sd">    min_spacing_hz : float, optional</span>
+<span class="sd">        Minimum frequency separation between modes in Hz.</span>
+<span class="sd">        If None, defaults to (f_max - f_min) / (10 * n_modes).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    np.ndarray</span>
+<span class="sd">        Resonance frequencies in Hz, sorted ascending, length n_modes.</span>
+<span class="sd">        If fewer than n_modes peaks are found, the array is padded with NaN.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.signal</span><span class="w"> </span><span class="kn">import</span> <span class="n">find_peaks</span>
+
+    <span class="n">f</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># assumes uniform spacing</span>
+
+    <span class="k">if</span> <span class="n">min_spacing_hz</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">min_spacing_hz</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="mi">10</span> <span class="o">*</span> <span class="n">n_modes</span><span class="p">)</span>
+    <span class="n">min_distance_pts</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">min_spacing_hz</span> <span class="o">/</span> <span class="n">df</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;min_re&quot;</span><span class="p">:</span>
+        <span class="c1"># Search for minima of Re(S) by inverting the trace</span>
+        <span class="n">trace</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">])</span>
+
+    <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;circle_fit&quot;</span><span class="p">:</span>
+        <span class="c1"># Build the angular velocity |dθ/df| trace from the circle fit</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">imag</span>
+
+        <span class="c1"># Kasa algebraic circle fit</span>
+        <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">))])</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">x</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">y</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">coeffs</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">lstsq</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="n">cx</span><span class="p">,</span> <span class="n">cy</span> <span class="o">=</span> <span class="o">-</span><span class="n">coeffs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">,</span> <span class="o">-</span><span class="n">coeffs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="mf">2.0</span>
+
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unwrap</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">angle</span><span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="n">cx</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="p">(</span><span class="n">y</span> <span class="o">-</span> <span class="n">cy</span><span class="p">)))</span>
+        <span class="n">trace</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown resonance method: </span><span class="si">{</span><span class="n">method</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">prominence</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">prominence</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="p">(</span><span class="n">trace</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">trace</span><span class="o">.</span><span class="n">min</span><span class="p">())</span>
+
+    <span class="n">peak_indices</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_peaks</span><span class="p">(</span>
+        <span class="n">trace</span><span class="p">,</span>
+        <span class="n">prominence</span><span class="o">=</span><span class="n">prominence</span><span class="p">,</span>
+        <span class="n">distance</span><span class="o">=</span><span class="n">min_distance_pts</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Sort by peak height descending, take top n_modes, then re-sort by frequency</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">peak_indices</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">n_modes</span><span class="p">:</span>
+        <span class="n">heights</span> <span class="o">=</span> <span class="n">trace</span><span class="p">[</span><span class="n">peak_indices</span><span class="p">]</span>
+        <span class="n">top</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">heights</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">][:</span><span class="n">n_modes</span><span class="p">]</span>
+        <span class="n">peak_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">peak_indices</span><span class="p">[</span><span class="n">top</span><span class="p">])</span>
+
+    <span class="n">freqs</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="n">peak_indices</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+
+    <span class="c1"># Pad with NaN if not enough peaks found</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">freqs</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_modes</span><span class="p">:</span>
+        <span class="n">freqs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">freqs</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n_modes</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">freqs</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)])</span>
+
+    <span class="k">return</span> <span class="n">freqs</span></div>
+
+
+<div class="viewcode-block" id="resonance_from_s_max">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonance_from_s_max">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonance_from_s_max</span><span class="p">(</span><span class="n">network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span> <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Resonance frequency from the dominant peak in |S[m,n]|.</span>
+
+<span class="sd">    Finds all peaks in the magnitude and returns the frequency of the</span>
+<span class="sd">    largest one.  Useful for transmission parameters (S12/S21) where the</span>
+<span class="sd">    resonance appears as a peak rather than a dip.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    network : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices (0-based).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Dominant resonance frequency in GHz.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If no peaks are found in |S[m,n]|.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span>     <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span> <span class="o">/</span> <span class="mf">1e9</span>
+    <span class="n">s_mn</span>  <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+    <span class="n">peaks</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_peaks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">s_mn</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">peaks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No peaks found in |S[</span><span class="si">{}</span><span class="s2">,</span><span class="si">{}</span><span class="s2">]|.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+
+    <span class="n">peak_idx</span> <span class="o">=</span> <span class="n">peaks</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">s_mn</span><span class="p">)[</span><span class="n">peaks</span><span class="p">])]</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="resonances_from_s_max">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonances_from_s_max">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonances_from_s_max</span><span class="p">(</span><span class="n">network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span> <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Resonance frequency from the dominant peak in |S[m,n]|.</span>
+
+<span class="sd">    Finds all peaks in the magnitude and returns the frequency of the</span>
+<span class="sd">    largest one.  Useful for transmission parameters (S12/S21) where the</span>
+<span class="sd">    resonance appears as a peak rather than a dip.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    network : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices (0-based).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Dominant resonance frequency in GHz.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If no peaks are found in |S[m,n]|.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span>     <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span> <span class="o">/</span> <span class="mf">1e9</span>
+    <span class="n">s_mn</span>  <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+    <span class="n">peaks</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_peaks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">s_mn</span><span class="p">))</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="n">peaks</span><span class="p">]</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Resonance frequencies (GHz): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">freqs</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">peaks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No peaks found in |S[</span><span class="si">{}</span><span class="s2">,</span><span class="si">{}</span><span class="s2">]|.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">freqs</span></div>
+
+
+
+<div class="viewcode-block" id="resonances_from_s">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonances_from_s">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonances_from_s</span><span class="p">(</span><span class="n">network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span> <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Find all resonance frequencies from peaks in Re(S[m,n]).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    network : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices (0-based).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    np.ndarray</span>
+<span class="sd">        Array of resonance frequencies in GHz.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span>    <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span> <span class="o">/</span> <span class="mf">1e9</span>
+    <span class="n">s_mn</span> <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+    <span class="n">peaks</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_peaks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">s_mn</span><span class="p">))</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="n">peaks</span><span class="p">]</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Resonance frequencies (GHz): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">freqs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">freqs</span></div>
+
+
+
+<div class="viewcode-block" id="fwhm_from_trace_db">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.fwhm_from_trace_db">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fwhm_from_trace_db</span><span class="p">(</span>
+    <span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;dip&quot;</span><span class="p">,</span>
+    <span class="n">smooth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Full-Width at Half Maximum (FWHM) from S-parameter magnitude in dB.</span>
+
+<span class="sd">    Uses crossing-interpolation to find the two frequencies where the</span>
+<span class="sd">    magnitude crosses the half-depth level, giving a more accurate result</span>
+<span class="sd">    than a pure index-based approach.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ntwk : rf.Network</span>
+<span class="sd">    m, n : int</span>
+<span class="sd">        S-parameter indices (0-based).</span>
+<span class="sd">    kind : {&quot;dip&quot;, &quot;peak&quot;}</span>
+<span class="sd">        &quot;dip&quot;  — resonance appears as a downward dip (typical for S11/S22).</span>
+<span class="sd">        &quot;peak&quot; — resonance appears as an upward peak (typical for S12/S21).</span>
+<span class="sd">    smooth : int or None</span>
+<span class="sd">        Optional moving-average window length for noisy traces.</span>
+<span class="sd">        Use an odd integer; None disables smoothing.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        FWHM linewidth in Hz.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If two crossings at the half-depth level cannot be found.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span>      <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">ntwk</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">s</span>      <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+    <span class="n">mag_db</span> <span class="o">=</span> <span class="mi">20</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">s</span><span class="p">),</span> <span class="mf">1e-300</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">smooth</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">smooth</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">kernel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">smooth</span><span class="p">))</span> <span class="o">/</span> <span class="nb">int</span><span class="p">(</span><span class="n">smooth</span><span class="p">)</span>
+        <span class="n">mag_db</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">mag_db</span><span class="p">,</span> <span class="n">kernel</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;same&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;dip&quot;</span><span class="p">:</span>
+        <span class="n">i0</span>       <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">mag_db</span><span class="p">)</span>
+        <span class="n">y0</span>       <span class="o">=</span> <span class="n">mag_db</span><span class="p">[</span><span class="n">i0</span><span class="p">]</span>
+        <span class="n">baseline</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">r_</span><span class="p">[</span>
+            <span class="n">mag_db</span><span class="p">[:</span><span class="nb">max</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">i0</span> <span class="o">//</span> <span class="mi">8</span><span class="p">)],</span>
+            <span class="n">mag_db</span><span class="p">[</span><span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mag_db</span><span class="p">)</span> <span class="o">-</span> <span class="mi">3</span><span class="p">,</span> <span class="n">i0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">mag_db</span><span class="p">)</span> <span class="o">//</span> <span class="mi">8</span><span class="p">):],</span>
+        <span class="p">])</span>
+        <span class="n">level</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">baseline</span> <span class="o">+</span> <span class="n">y0</span><span class="p">)</span>
+        <span class="n">above</span> <span class="o">=</span> <span class="n">mag_db</span> <span class="o">&gt;</span> <span class="n">level</span>
+    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;peak&quot;</span><span class="p">:</span>
+        <span class="n">i0</span>       <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">mag_db</span><span class="p">)</span>
+        <span class="n">y0</span>       <span class="o">=</span> <span class="n">mag_db</span><span class="p">[</span><span class="n">i0</span><span class="p">]</span>
+        <span class="n">baseline</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">r_</span><span class="p">[</span>
+            <span class="n">mag_db</span><span class="p">[:</span><span class="nb">max</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">i0</span> <span class="o">//</span> <span class="mi">8</span><span class="p">)],</span>
+            <span class="n">mag_db</span><span class="p">[</span><span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mag_db</span><span class="p">)</span> <span class="o">-</span> <span class="mi">3</span><span class="p">,</span> <span class="n">i0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">mag_db</span><span class="p">)</span> <span class="o">//</span> <span class="mi">8</span><span class="p">):],</span>
+        <span class="p">])</span>
+        <span class="n">level</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">baseline</span> <span class="o">+</span> <span class="n">y0</span><span class="p">)</span>
+        <span class="n">above</span> <span class="o">=</span> <span class="n">mag_db</span> <span class="o">&lt;</span> <span class="n">level</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;kind must be &#39;dip&#39; or &#39;peak&#39;, got &#39;</span><span class="si">{}</span><span class="s2">&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">kind</span><span class="p">))</span>
+
+    <span class="n">flips</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">above</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">above</span><span class="p">[</span><span class="mi">1</span><span class="p">:])[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">flips</span><span class="o">.</span><span class="n">size</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Could not find two crossings for FWHM.&quot;</span><span class="p">)</span>
+
+    <span class="n">left_flips</span>  <span class="o">=</span> <span class="n">flips</span><span class="p">[</span><span class="n">flips</span> <span class="o">&lt;</span> <span class="n">i0</span><span class="p">]</span>
+    <span class="n">right_flips</span> <span class="o">=</span> <span class="n">flips</span><span class="p">[</span><span class="n">flips</span> <span class="o">&gt;=</span> <span class="n">i0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">left_flips</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">right_flips</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Could not bracket resonance with crossings.&quot;</span><span class="p">)</span>
+
+    <span class="n">iL</span> <span class="o">=</span> <span class="n">left_flips</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">iR</span> <span class="o">=</span> <span class="n">right_flips</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_interp_crossing</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="n">x0</span><span class="p">,</span> <span class="n">x1</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">f</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">y0_</span><span class="p">,</span> <span class="n">y1_</span> <span class="o">=</span> <span class="n">mag_db</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">mag_db</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">y1_</span> <span class="o">==</span> <span class="n">y0_</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">x0</span> <span class="o">+</span> <span class="n">x1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x0</span> <span class="o">+</span> <span class="p">(</span><span class="n">level</span> <span class="o">-</span> <span class="n">y0_</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">x1</span> <span class="o">-</span> <span class="n">x0</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">y1_</span> <span class="o">-</span> <span class="n">y0_</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">_interp_crossing</span><span class="p">(</span><span class="n">iR</span><span class="p">)</span> <span class="o">-</span> <span class="n">_interp_crossing</span><span class="p">(</span><span class="n">iL</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="fwhm_from_res11">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.fwhm_from_res11">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fwhm_from_res11</span><span class="p">(</span><span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Linewidth from zero crossings of Re(S11).</span>
+
+<span class="sd">    Re(S11) crosses zero at the two half-power frequencies of the resonance.</span>
+<span class="sd">    Uses linear interpolation between samples for accuracy.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ntwk : rf.Network</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Linewidth (distance between the two zero crossings) in Hz.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If fewer than two zero crossings are found.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">f</span>     <span class="o">=</span> <span class="n">ntwk</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+    <span class="n">re_s11</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">ntwk</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">sign_changes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">re_s11</span><span class="p">)))[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sign_changes</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Could not determine linewidth: fewer than 2 zero crossings found.&quot;</span><span class="p">)</span>
+
+    <span class="n">zeros</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">sign_changes</span><span class="p">[:</span><span class="mi">2</span><span class="p">]:</span>
+        <span class="n">f1</span><span class="p">,</span> <span class="n">f2</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">f</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">y1</span><span class="p">,</span> <span class="n">y2</span> <span class="o">=</span> <span class="n">re_s11</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">re_s11</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">f_zero</span> <span class="o">=</span> <span class="n">f1</span> <span class="o">-</span> <span class="n">y1</span> <span class="o">*</span> <span class="p">(</span><span class="n">f2</span> <span class="o">-</span> <span class="n">f1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">y2</span> <span class="o">-</span> <span class="n">y1</span><span class="p">)</span>
+        <span class="n">zeros</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f_zero</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">zeros</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">zeros</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="resonance_from_res11">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.resonance_from_res11">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resonance_from_res11</span><span class="p">(</span><span class="n">ntwk</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Resonance frequency from the minimum of Re(S11).</span>
+
+<span class="sd">    Thin convenience wrapper around `resonance` for the common single-port</span>
+<span class="sd">    S11 case.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ntwk : rf.Network</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Resonance frequency in Hz.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">resonance</span><span class="p">(</span><span class="n">ntwk</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">use_max</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">find_resonant_frequency</span><span class="p">(</span><span class="n">network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">complex</span><span class="p">:</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">f</span>
+    <span class="n">S21</span> <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">mag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">S21</span><span class="p">)</span>
+    <span class="n">peak_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">mag</span><span class="p">)</span>
+    <span class="n">omega_0</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">]</span>
+
+    <span class="n">half_pow</span> <span class="o">=</span> <span class="n">mag</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">]</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">left</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mag</span><span class="p">[:</span><span class="n">peak_idx</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">half_pow</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">right</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mag</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">:]</span> <span class="o">&lt;</span> <span class="n">half_pow</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">alpha</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">[</span><span class="n">peak_idx</span> <span class="o">+</span> <span class="n">right</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">[</span><span class="n">left</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]])</span> <span class="o">/</span> <span class="mi">2</span>
+
+    <span class="n">pole</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="o">-</span><span class="n">alpha</span><span class="p">,</span> <span class="n">omega_0</span><span class="p">)</span>
+    <span class="n">f0</span> <span class="o">=</span> <span class="n">pole</span><span class="o">.</span><span class="n">imag</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">f0</span>
+
+
+<div class="viewcode-block" id="find_resonant_frequency">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analysis.find_resonant_frequency">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_resonant_frequency</span><span class="p">(</span><span class="n">network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">complex</span><span class="p">:</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">f</span>
+    <span class="n">S21</span> <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">mag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">S21</span><span class="p">)</span>
+    <span class="n">peak_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">mag</span><span class="p">)</span>
+    <span class="n">omega_0</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">]</span>
+
+    <span class="n">half_pow</span> <span class="o">=</span> <span class="n">mag</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">]</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">left</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mag</span><span class="p">[:</span><span class="n">peak_idx</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">half_pow</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">right</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mag</span><span class="p">[</span><span class="n">peak_idx</span><span class="p">:]</span> <span class="o">&lt;</span> <span class="n">half_pow</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">alpha</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">[</span><span class="n">peak_idx</span> <span class="o">+</span> <span class="n">right</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">[</span><span class="n">left</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]])</span> <span class="o">/</span> <span class="mi">2</span>
+
+    <span class="n">pole</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="o">-</span><span class="n">alpha</span><span class="p">,</span> <span class="n">omega_0</span><span class="p">)</span>
+    <span class="n">f0</span> <span class="o">=</span> <span class="n">pole</span><span class="o">.</span><span class="n">imag</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">f0</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../index.html">
+              <img class="logo" src="../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation index</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.models.optimized_fit &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/nameko.css?v=2296cfae" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.models.optimized_fit</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.models.optimized_fit</h1><div class="highlight"><pre>
+<span></span><span class="c1"># from __future__ import annotations</span>
+
+<span class="c1"># &quot;&quot;&quot;</span>
+<span class="c1"># models/optimized.py</span>
+<span class="c1"># -------------------</span>
+<span class="c1"># OptimizedFit: numerical optimization over S11 + S22 residuals to find</span>
+<span class="c1"># the best-fit effective L and C for a CPW resonator.</span>
+
+<span class="c1"># Algorithm summary</span>
+<span class="c1"># -----------------</span>
+<span class="c1"># Stage 1 — coarse scan (fit_Ceff_Leff):</span>
+<span class="c1">#     Scan ω0 in a window around the measured resonance.  For each ω0,</span>
+<span class="c1">#     use Nelder-Mead to optimise Leff with Ceff forced by the resonance</span>
+<span class="c1">#     constraint ω0² * L * (C + Cc1 + Cc2) = 1.  Keep the best (L, C).</span>
+
+<span class="c1"># Stage 2 — windowed refinement (least_squares):</span>
+<span class="c1">#     Build separate frequency windows around the S11 and S22 resonances.</span>
+<span class="c1">#     Minimise the complex residuals of the 2-port LC network against the</span>
+<span class="c1">#     CPW reference network, weighted by resonance depth to prevent one</span>
+<span class="c1">#     shallow trace from dominating.</span>
+<span class="c1"># &quot;&quot;&quot;</span>
+
+<span class="c1"># import logging</span>
+<span class="c1"># from dataclasses import dataclass, field</span>
+
+<span class="c1"># import numpy as np</span>
+<span class="c1"># import skrf as rf</span>
+<span class="c1"># from scipy.optimize import minimize, least_squares</span>
+
+<span class="c1"># from simpleLOMs.models.base import BaseFit</span>
+<span class="c1"># from simpleLOMs.analysis import (</span>
+<span class="c1">#     resonance_from_res11,</span>
+<span class="c1">#     fwhm_from_res11,</span>
+<span class="c1">#     fwhm_from_trace_db,</span>
+<span class="c1">#     resonance,</span>
+<span class="c1">#     resonance_from_s_max,</span>
+<span class="c1"># )</span>
+<span class="c1"># from simpleLOMs.networks.lc import (</span>
+<span class="c1">#     lc_resonator_network,</span>
+<span class="c1">#     lc_resonator_network_2port,</span>
+<span class="c1">#     lc_resonator_network_with_grounds_2port,</span>
+<span class="c1"># )</span>
+
+<span class="c1"># logger = logging.getLogger(__name__)</span>
+
+
+<span class="c1"># # ---------------------------------------------------------------------------</span>
+<span class="c1"># # Helper dataclass for optimizer hyperparameters</span>
+<span class="c1"># # ---------------------------------------------------------------------------</span>
+
+<span class="c1"># @dataclass</span>
+<span class="c1"># class OptimizationConfig:</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     Tuning knobs for the two-stage OptimizedFit algorithm.</span>
+
+<span class="c1">#     You rarely need to change these — the defaults work well for typical</span>
+<span class="c1">#     CPW resonators in the 4–10 GHz range.  They are collected here so</span>
+<span class="c1">#     that a caller can pass a single object instead of many keyword args.</span>
+
+<span class="c1">#     Attributes</span>
+<span class="c1">#     ----------</span>
+<span class="c1">#     w0_window_frac : float</span>
+<span class="c1">#         Half-width of the ω0 scan window as a fraction of ω0_guess.</span>
+<span class="c1">#         e.g. 0.005 → scan ω0 ± 0.5 %.</span>
+<span class="c1">#     n_w0 : int</span>
+<span class="c1">#         Number of ω0 grid points in the coarse scan.</span>
+<span class="c1">#     n_dense : int</span>
+<span class="c1">#         Number of data points sampled around resonance in Stage 1.</span>
+<span class="c1">#     n_kappa : float</span>
+<span class="c1">#         Half-width of the dense sampling window in units of κ (linewidth).</span>
+<span class="c1">#     n_widths : float</span>
+<span class="c1">#         Half-width of each residual window in Stage 2, in units of κ.</span>
+<span class="c1">#     max_nfev : int</span>
+<span class="c1">#         Maximum function evaluations for the Stage 2 least_squares call.</span>
+<span class="c1">#     verbose : bool</span>
+<span class="c1">#         If True, least_squares prints iteration progress.</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     w0_window_frac: float = 0.00001</span>
+<span class="c1">#     n_w0:          int   = 20</span>
+<span class="c1">#     n_dense:       int   = 100</span>
+<span class="c1">#     n_kappa:       float = 0.75</span>
+<span class="c1">#     n_widths:      float = 1.0</span>
+<span class="c1">#     max_nfev:      int   = 100</span>
+<span class="c1">#     verbose:       bool  = False</span>
+
+
+<span class="c1"># # ---------------------------------------------------------------------------</span>
+<span class="c1"># # OptimizedFit class</span>
+<span class="c1"># # ---------------------------------------------------------------------------</span>
+
+<span class="c1"># class OptimizedFit(BaseFit):</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     Lumped LC model via two-stage numerical optimisation.</span>
+
+<span class="c1">#     Parameters</span>
+<span class="c1">#     ----------</span>
+<span class="c1">#     config : OptimizationConfig, optional</span>
+<span class="c1">#         Hyperparameters for the fitting algorithm.</span>
+<span class="c1">#         Uses sensible defaults if not provided.</span>
+
+<span class="c1">#     Attributes</span>
+<span class="c1">#     ----------</span>
+<span class="c1">#     L : float or None</span>
+<span class="c1">#         Fitted effective inductance in Henries.  None before fit().</span>
+<span class="c1">#     C : float or None</span>
+<span class="c1">#         Fitted effective capacitance in Farads.  None before fit().</span>
+<span class="c1">#     scan_results : np.ndarray or None</span>
+<span class="c1">#         Diagnostic array from the Stage 1 ω0 scan, shape (n_w0, 4):</span>
+<span class="c1">#         columns are [ω0, Ceff, Leff, sse].</span>
+
+<span class="c1">#     Examples</span>
+<span class="c1">#     --------</span>
+<span class="c1">#     ::</span>
+
+<span class="c1">#         from simpleLOMs.models.optimized import OptimizedFit, OptimizationConfig</span>
+<span class="c1">#         import skrf as rf</span>
+
+<span class="c1">#         freq       = rf.Frequency(4e9, 10e9, 10_001, unit=&quot;Hz&quot;)</span>
+<span class="c1">#         data_ntw   = ...  # rf.Network of the CPW S11 measurement</span>
+<span class="c1">#         config     = OptimizationConfig(n_w0=30, w0_window_frac=0.01)</span>
+
+<span class="c1">#         model = OptimizedFit(config=config)</span>
+<span class="c1">#         model.fit(freq, data_ntw=data_ntw, Cc1=5e-15, Cc2=5e-15, Z0=50)</span>
+
+<span class="c1">#         net = model.get_network(freq, Cc1=5e-15, Cc2=5e-15, Z0=50)</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+
+<span class="c1">#     def __init__(self, config: OptimizationConfig = None):</span>
+<span class="c1">#         self.config: OptimizationConfig    = config if config is not None else OptimizationConfig()</span>
+<span class="c1">#         self.L:            float | None    = None</span>
+<span class="c1">#         self.C:            float | None    = None</span>
+<span class="c1">#         self.scan_results: np.ndarray | None = None</span>
+
+<span class="c1">#     # ------------------------------------------------------------------</span>
+<span class="c1">#     # Internal helpers</span>
+<span class="c1">#     # ------------------------------------------------------------------</span>
+
+<span class="c1">#     def _build_sparse_data_points(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         data_ntw: rf.Network,</span>
+<span class="c1">#         n_dense: int,</span>
+<span class="c1">#         n_kappa: float,</span>
+<span class="c1">#     ) -&gt; list[tuple[float, float, float]]:</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         Build a sparse, physically-motivated set of (ω, Re(S11), Im(S11)) tuples.</span>
+
+<span class="c1">#         Always includes the minimum of Re(S11) (resonance point).</span>
+<span class="c1">#         Optionally adds a dense cluster of points around the resonance.</span>
+
+<span class="c1">#         Parameters</span>
+<span class="c1">#         ----------</span>
+<span class="c1">#         data_ntw : rf.Network</span>
+<span class="c1">#             Single-port S11 measurement or model.</span>
+<span class="c1">#         n_dense : int</span>
+<span class="c1">#             How many extra points to add around resonance. 0 disables.</span>
+<span class="c1">#         n_kappa : float</span>
+<span class="c1">#             Half-width of the dense window in units of linewidth κ.</span>
+
+<span class="c1">#         Returns</span>
+<span class="c1">#         -------</span>
+<span class="c1">#         list of (omega, ReS11, ImS11)</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         f_hz  = data_ntw.frequency.f</span>
+<span class="c1">#         w     = 2 * np.pi * f_hz</span>
+<span class="c1">#         S11   = data_ntw.s[:, 0, 0]</span>
+<span class="c1">#         re_s11 = np.real(S11)</span>
+<span class="c1">#         im_s11 = np.imag(S11)</span>
+
+<span class="c1">#         # Resonance point (minimum of Re(S11))</span>
+<span class="c1">#         idx_re_min = np.argmin(re_s11)</span>
+<span class="c1">#         data_points = [(w[idx_re_min], re_s11[idx_re_min], im_s11[idx_re_min])]</span>
+
+<span class="c1">#         if n_dense &gt; 0:</span>
+<span class="c1">#             f0    = f_hz[idx_re_min]</span>
+<span class="c1">#             kappa = fwhm_from_res11(data_ntw)</span>
+
+<span class="c1">#             f_dense = np.linspace(</span>
+<span class="c1">#                 f0 - n_kappa * kappa,</span>
+<span class="c1">#                 f0 + (n_kappa / 2) * kappa,</span>
+<span class="c1">#                 n_dense + 2,</span>
+<span class="c1">#             )[1:-1]</span>
+
+<span class="c1">#             re_dense = np.interp(f_dense, f_hz, re_s11)</span>
+<span class="c1">#             im_dense = np.interp(f_dense, f_hz, im_s11)</span>
+
+<span class="c1">#             for f_pt, r, i in zip(f_dense, re_dense, im_dense):</span>
+<span class="c1">#                 data_points.append((2 * np.pi * f_pt, r, i))</span>
+
+<span class="c1">#         return data_points</span>
+
+<span class="c1">#     def _fit_Ceff_Leff(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         w0_guess: float,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         Z0: float,</span>
+<span class="c1">#         data_points: list,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#     ) -&gt; tuple[float, float, float, np.ndarray]:</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         Stage 1: scan ω0 and fit Leff by Nelder-Mead with Ceff constrained.</span>
+
+<span class="c1">#         Returns (Ceff_best, Leff_best, w0_best, scan_results).</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         cfg = self.config</span>
+<span class="c1">#         dp  = np.asarray(data_points, dtype=float)</span>
+<span class="c1">#         freqs  = dp[:, 0]</span>
+<span class="c1">#         target = dp[:, 1] + 1j * dp[:, 2]</span>
+
+<span class="c1">#         def ZCc1(w):   return 1.0 / (1j * w * Cc1)</span>
+<span class="c1">#         def ZCc2(w):   return 1.0 / (1j * w * Cc2)</span>
+<span class="c1">#         def ZL(w, Le): return 1j * w * Le</span>
+<span class="c1">#         def ZC(w, Ce): return 1.0 / (1j * w * Ce)</span>
+<span class="c1">#         def ZLC(w, Le, Ce):</span>
+<span class="c1">#             return 1.0 / (1.0 / ZL(w, Le) + 1.0 / ZC(w, Ce))</span>
+<span class="c1">#         def Zshunt(w, Le, Ce):</span>
+<span class="c1">#             return 1.0 / (1.0 / ZLC(w, Le, Ce) + 1.0 / ZCc2(w))</span>
+<span class="c1">#         def Zin(w, Le, Ce):</span>
+<span class="c1">#             return ZCc1(w) + Zshunt(w, Le, Ce)</span>
+<span class="c1">#         def S11(w, Le, Ce):</span>
+<span class="c1">#             z = Zin(w, Le, Ce)</span>
+<span class="c1">#             return (z - Z0) / (z + Z0)</span>
+
+<span class="c1">#         w0_min  = w0_guess * (1.0 - cfg.w0_window_frac)</span>
+<span class="c1">#         w0_max  = w0_guess * (1.0 + cfg.w0_window_frac)</span>
+<span class="c1">#         w0_grid = np.linspace(w0_min, w0_max, int(cfg.n_w0))</span>
+
+<span class="c1">#         best    = None</span>
+<span class="c1">#         results = []</span>
+
+<span class="c1">#         for w0 in w0_grid:</span>
+<span class="c1">#             def ceff_of_L(Le):</span>
+<span class="c1">#                 return 1.0 / (Le * (w0 ** 2)) - (Cc1 + Cc2)</span>
+
+<span class="c1">#             Le_max   = 1.0 / ((Cc1 + Cc2) * (w0 ** 2))</span>
+<span class="c1">#             Le_upper = 0.999 * Le_max</span>
+<span class="c1">#             x0_local = 0.5 * Le_upper</span>
+
+<span class="c1">#             def obj(Le_arr):</span>
+<span class="c1">#                 Le = float(Le_arr[0])</span>
+<span class="c1">#                 if not (0.0 &lt; Le &lt; Le_upper):</span>
+<span class="c1">#                     dist = (0.0 - Le) if Le &lt;= 0.0 else (Le - Le_upper)</span>
+<span class="c1">#                     return 1e6 * (1.0 + dist ** 2)</span>
+<span class="c1">#                 Ce = ceff_of_L(Le)</span>
+<span class="c1">#                 if Ce &lt;= 0.0 or not np.isfinite(Ce):</span>
+<span class="c1">#                     return 1e6</span>
+<span class="c1">#                 pred  = np.array([S11(w, Le, Ce) for w in freqs])</span>
+<span class="c1">#                 resid = pred - target</span>
+<span class="c1">#                 return float(np.sum(resid.real ** 2 + resid.imag ** 2))</span>
+
+<span class="c1">#             fit = minimize(</span>
+<span class="c1">#                 obj,</span>
+<span class="c1">#                 x0=np.array([x0_local]),</span>
+<span class="c1">#                 method=&quot;Nelder-Mead&quot;,</span>
+<span class="c1">#                 options=dict(maxiter=3000, xatol=1e-30, fatol=1e-30, disp=False),</span>
+<span class="c1">#             )</span>
+
+<span class="c1">#             Le_hat = float(np.clip(fit.x[0], np.nextafter(0.0, 1.0), Le_upper))</span>
+<span class="c1">#             Ce_hat = ceff_of_L(Le_hat)</span>
+<span class="c1">#             sse    = float(fit.fun)</span>
+<span class="c1">#             results.append((w0, Ce_hat, Le_hat, sse))</span>
+
+<span class="c1">#             if best is None or sse &lt; best[-1]:</span>
+<span class="c1">#                 best = (w0, Ce_hat, Le_hat, sse)</span>
+
+<span class="c1">#         w0_best, Ceff_best, Leff_best, _ = best</span>
+<span class="c1">#         return Ceff_best, Leff_best, w0_best, np.array(results)</span>
+
+<span class="c1">#     def _make_windowed_residuals(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#         data_ntw: rf.Network,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         f0_s11: float,</span>
+<span class="c1">#         kappa_s11: float,</span>
+<span class="c1">#         f0_s22: float,</span>
+<span class="c1">#         kappa_s22: float,</span>
+<span class="c1">#         Z0: float,</span>
+<span class="c1">#         eps: float = 1e-18,</span>
+<span class="c1">#     ):</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         Stage 2: build the windowed residual function for least_squares.</span>
+
+<span class="c1">#         Returns a callable residuals(x) where x = [Leff, Ceff].</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         cfg = self.config</span>
+
+<span class="c1">#         # Interpolate data onto the optimisation frequency grid</span>
+<span class="c1">#         f_old = data_ntw.frequency.f</span>
+<span class="c1">#         f_new = freq.f</span>
+
+<span class="c1">#         if len(f_old) == len(f_new) and np.allclose(f_old, f_new):</span>
+<span class="c1">#             data_aligned = data_ntw</span>
+<span class="c1">#         else:</span>
+<span class="c1">#             S_old = data_ntw.s</span>
+<span class="c1">#             S_new = np.zeros((len(f_new), 2, 2), dtype=complex)</span>
+<span class="c1">#             for i in range(2):</span>
+<span class="c1">#                 for j in range(2):</span>
+<span class="c1">#                     yr = np.interp(f_new, f_old, np.real(S_old[:, i, j]))</span>
+<span class="c1">#                     yi = np.interp(f_new, f_old, np.imag(S_old[:, i, j]))</span>
+<span class="c1">#                     S_new[:, i, j] = yr + 1j * yi</span>
+<span class="c1">#             z0_old = data_ntw.z0</span>
+<span class="c1">#             if z0_old.ndim == 1:</span>
+<span class="c1">#                 z0_new = np.tile(z0_old[0], (len(f_new), 2))</span>
+<span class="c1">#             else:</span>
+<span class="c1">#                 z0_new = np.zeros((len(f_new), 2))</span>
+<span class="c1">#                 for p in range(2):</span>
+<span class="c1">#                     z0_new[:, p] = np.interp(f_new, f_old, z0_old[:, p])</span>
+<span class="c1">#             data_aligned = rf.Network(frequency=freq, s=S_new, z0=z0_new)</span>
+
+<span class="c1">#         f = freq.f</span>
+<span class="c1">#         n = cfg.n_widths</span>
+<span class="c1">#         mask11 = (f &gt; f0_s11 - n * kappa_s11) &amp; (f &lt; f0_s11 + n * kappa_s11)</span>
+<span class="c1">#         mask22 = (f &gt; f0_s22 - n * kappa_s22) &amp; (f &lt; f0_s22 + n * kappa_s22)</span>
+
+<span class="c1">#         if not np.any(mask11):</span>
+<span class="c1">#             raise ValueError(&quot;S11 mask is empty: check f0_s11/kappa_s11/n_widths.&quot;)</span>
+<span class="c1">#         if not np.any(mask22):</span>
+<span class="c1">#             raise ValueError(&quot;S22 mask is empty: check f0_s22/kappa_s22/n_widths.&quot;)</span>
+
+<span class="c1">#         freq11   = rf.Frequency.from_f(f[mask11], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq22   = rf.Frequency.from_f(f[mask22], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         s11_data = data_aligned.s[mask11, 0, 0]</span>
+<span class="c1">#         s22_data = data_aligned.s[mask22, 1, 1]</span>
+
+<span class="c1">#         def _depth(s_complex):</span>
+<span class="c1">#             m = np.real(s_complex)</span>
+<span class="c1">#             return max(float(np.max(m) - np.min(m)), eps)</span>
+
+<span class="c1">#         S11_scale = _depth(s11_data)</span>
+<span class="c1">#         S22_scale = _depth(s22_data)</span>
+<span class="c1">#         depth_floor = max(S11_scale, S22_scale)</span>
+<span class="c1">#         S11_scale = max(S11_scale, depth_floor)</span>
+<span class="c1">#         S22_scale = max(S22_scale, depth_floor)</span>
+
+<span class="c1">#         logger.debug(&quot;S11 depth scale=%.4e, N11=%d&quot;, S11_scale, mask11.sum())</span>
+<span class="c1">#         logger.debug(&quot;S22 depth scale=%.4e, N22=%d&quot;, S22_scale, mask22.sum())</span>
+
+<span class="c1">#         def residuals(x):</span>
+<span class="c1">#             Le, Ce = float(x[0]), float(x[1])</span>
+<span class="c1">#             lom11  = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq11, Z0)</span>
+<span class="c1">#             lom22  = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq22, Z0)</span>
+<span class="c1">#             r11    = lom11.s[:, 0, 0] - s11_data</span>
+<span class="c1">#             r22    = lom22.s[:, 1, 1] - s22_data</span>
+<span class="c1">#             r11_sc = np.concatenate([r11.real, r11.imag]) / S11_scale</span>
+<span class="c1">#             r22_sc = np.concatenate([r22.real, r22.imag]) / S22_scale</span>
+<span class="c1">#             return np.concatenate([r11_sc, r22_sc])</span>
+
+<span class="c1">#         return residuals</span>
+
+<span class="c1">#     def _make_windowed_residuals2(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#         data_ntw: rf.Network,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         f0_s11: float,</span>
+<span class="c1">#         kappa_s11: float,</span>
+<span class="c1">#         f0_s22: float,</span>
+<span class="c1">#         kappa_s22: float,</span>
+<span class="c1">#         Z0: float,</span>
+<span class="c1">#         eps: float = 1e-18,</span>
+<span class="c1">#         phase=None,</span>
+<span class="c1">#     ):</span>
+<span class="c1">#         cfg = self.config</span>
+<span class="c1">#         f_old = data_ntw.frequency.f</span>
+<span class="c1">#         f_new = freq.f</span>
+<span class="c1">#         if len(f_old) == len(f_new) and np.allclose(f_old, f_new):</span>
+<span class="c1">#             data_aligned = data_ntw</span>
+<span class="c1">#         else:</span>
+<span class="c1">#             S_old = data_ntw.s</span>
+<span class="c1">#             S_new = np.zeros((len(f_new), 2, 2), dtype=complex)</span>
+<span class="c1">#             for i in range(2):</span>
+<span class="c1">#                 for j in range(2):</span>
+<span class="c1">#                     yr = np.interp(f_new, f_old, np.real(S_old[:, i, j]))</span>
+<span class="c1">#                     yi = np.interp(f_new, f_old, np.imag(S_old[:, i, j]))</span>
+<span class="c1">#                     S_new[:, i, j] = yr + 1j * yi</span>
+<span class="c1">#             z0_old = data_ntw.z0</span>
+<span class="c1">#             if z0_old.ndim == 1:</span>
+<span class="c1">#                 z0_new = np.tile(z0_old[0], (len(f_new), 2))</span>
+<span class="c1">#             else:</span>
+<span class="c1">#                 z0_new = np.zeros((len(f_new), 2))</span>
+<span class="c1">#                 for p in range(2):</span>
+<span class="c1">#                     z0_new[:, p] = np.interp(f_new, f_old, z0_old[:, p])</span>
+<span class="c1">#             data_aligned = rf.Network(frequency=freq, s=S_new, z0=z0_new)</span>
+
+<span class="c1">#         f = freq.f</span>
+<span class="c1">#         n = cfg.n_widths</span>
+<span class="c1">#         mask11 = (f &gt; f0_s11 - n * kappa_s11) &amp; (f &lt; f0_s11 + n * kappa_s11)</span>
+<span class="c1">#         mask22 = (f &gt; f0_s22 - n * kappa_s22) &amp; (f &lt; f0_s22 + n * kappa_s22)</span>
+<span class="c1">#         mask21 =(f &gt; f0_s11 - n * kappa_s11) &amp; (f &lt; f0_s11 + n * kappa_s11)</span>
+<span class="c1">#         mask12 =(f &gt; f0_s11 - n * kappa_s11) &amp; (f &lt; f0_s11 + n * kappa_s11)</span>
+
+
+<span class="c1">#         if not np.any(mask11):</span>
+<span class="c1">#             raise ValueError(&quot;S11 mask is empty: check f0_s11/kappa_s11/n_widths.&quot;)</span>
+<span class="c1">#         if not np.any(mask22):</span>
+<span class="c1">#             raise ValueError(&quot;S22 mask is empty: check f0_s22/kappa_s22/n_widths.&quot;)</span>
+<span class="c1">#         if not np.any(mask21):</span>
+<span class="c1">#             raise ValueError(&quot;S21 mask is empty: no frequencies outside S11/S22 windows.&quot;)</span>
+
+<span class="c1">#         freq11 = rf.Frequency.from_f(f[mask11], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq22 = rf.Frequency.from_f(f[mask22], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq21 = rf.Frequency.from_f(f[mask21], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq12 = rf.Frequency.from_f(f[mask21], unit=&quot;Hz&quot;)</span>
+
+<span class="c1">#         s11_data = data_aligned.s[mask11, 0, 0]</span>
+<span class="c1">#         s22_data = data_aligned.s[mask22, 1, 1]</span>
+<span class="c1">#         s21_data = data_aligned.s[mask21, 1, 0]</span>
+<span class="c1">#         s12_data = data_aligned.s[mask12, 0, 1]</span>
+
+<span class="c1">#         def _depth(s_complex):</span>
+<span class="c1">#             m = np.abs(s_complex)</span>
+<span class="c1">#             return max(float(np.max(m) - np.min(m)), eps)</span>
+
+<span class="c1">#         S11_scale = _depth(s11_data)</span>
+<span class="c1">#         S22_scale = _depth(s22_data)</span>
+<span class="c1">#         depth_floor = max(S11_scale, S22_scale)</span>
+<span class="c1">#         S11_scale = max(S11_scale, depth_floor)</span>
+<span class="c1">#         S22_scale = max(S22_scale, depth_floor)</span>
+<span class="c1">#         S21_scale = max(_depth(s21_data), depth_floor)</span>
+<span class="c1">#         S12_scale = max(_depth(s12_data), depth_floor)</span>
+
+<span class="c1">#         logger.debug(&quot;S11 depth scale=%.4e, N11=%d&quot;, S11_scale, mask11.sum())</span>
+<span class="c1">#         logger.debug(&quot;S22 depth scale=%.4e, N22=%d&quot;, S22_scale, mask22.sum())</span>
+<span class="c1">#         logger.debug(&quot;S21 depth scale=%.4e, N21=%d&quot;, S21_scale, mask21.sum())</span>
+
+<span class="c1">#         def residuals(x):</span>
+<span class="c1">#             Le, Ce = float(x[0]), float(x[1])</span>
+<span class="c1">#             lom11 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq11, Z0)</span>
+<span class="c1">#             lom22 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq22, Z0)</span>
+<span class="c1">#             lom21 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq21, Z0)</span>
+<span class="c1">#             lom12 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq12, Z0)</span>
+<span class="c1">#             if phase is not None:</span>
+<span class="c1">#                 r11 = lom11.s[:, 0, 0] * phase - s11_data</span>
+<span class="c1">#                 r22 = lom22.s[:, 1, 1] * phase - s22_data</span>
+<span class="c1">#                 r21 = lom21.s[:, 1, 0] * phase - s21_data</span>
+<span class="c1">#                 r12 = lom12.s[:, 0, 1] * phase - s12_data</span>
+
+<span class="c1">#                 r11_sc = np.concatenate([r11.real, r11.imag]) / S11_scale</span>
+<span class="c1">#                 r22_sc = np.concatenate([r22.real, r22.imag]) / S22_scale</span>
+<span class="c1">#                 r21_sc = np.concatenate([r21.real, r21.imag]) / S21_scale</span>
+<span class="c1">#                 r12_sc = np.concatenate([r12.real, r12.imag]) / S12_scale</span>
+<span class="c1">#             else: </span>
+<span class="c1">#                 r11 = lom11.s[:, 0, 0] - s11_data</span>
+<span class="c1">#                 r22 = lom22.s[:, 1, 1] - s22_data</span>
+<span class="c1">#                 r21 = lom21.s[:, 1, 0] - s21_data</span>
+<span class="c1">#                 r12 = lom12.s[:, 0, 1] - s12_data</span>
+
+<span class="c1">#                 r11_sc = np.concatenate([r11.real, r11.imag]) / S11_scale</span>
+<span class="c1">#                 r22_sc = np.concatenate([r22.real, r22.imag]) / S22_scale</span>
+<span class="c1">#                 r21_sc = np.concatenate([r21.real, r21.imag]) / S21_scale</span>
+<span class="c1">#                 r12_sc = np.concatenate([r12.real, r12.imag]) / S21_scale</span>
+
+<span class="c1">#             return np.concatenate([r11_sc, r22_sc, r21_sc, r12_sc])</span>
+<span class="c1">#             # lom21  = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq21, Z0)</span>
+<span class="c1">#             # r21_sc = np.concatenate([(lom21.s[:, 1, 0] - s21_data).real,</span>
+<span class="c1">#             #                         (lom21.s[:, 1, 0] - s21_data).imag]) / S21_scale</span>
+<span class="c1">#             # r12_sc = np.concatenate([(lom21.s[:, 0, 1] - s12_data).real,</span>
+<span class="c1">#             #                         (lom21.s[:, 0, 1] - s12_data).imag]) / S21_scale</span>
+<span class="c1">#             # return np.concatenate([r11_sc, r22_sc, r21_sc, r12_sc])</span>
+
+<span class="c1">#         return residuals</span>
+    
+<span class="c1">#     def _make_windowed_residuals_complex(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#         data_ntw: rf.Network,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         f0_s11: float,</span>
+<span class="c1">#         kappa_s11: float,</span>
+<span class="c1">#         f0_s22: float,</span>
+<span class="c1">#         kappa_s22: float,</span>
+<span class="c1">#         f0_s12: float,</span>
+<span class="c1">#         f0_s21: float,</span>
+<span class="c1">#         Z0: float,</span>
+<span class="c1">#         eps: float = 1e-18,</span>
+<span class="c1">#     ):</span>
+<span class="c1">#         cfg = self.config</span>
+<span class="c1">#         f_old = data_ntw.frequency.f</span>
+<span class="c1">#         f_new = freq.f</span>
+<span class="c1">#         if len(f_old) == len(f_new) and np.allclose(f_old, f_new):</span>
+<span class="c1">#             data_aligned = data_ntw</span>
+<span class="c1">#         else:</span>
+<span class="c1">#             S_old = data_ntw.s</span>
+<span class="c1">#             S_new = np.zeros((len(f_new), 2, 2), dtype=complex)</span>
+<span class="c1">#             for i in range(2):</span>
+<span class="c1">#                 for j in range(2):</span>
+<span class="c1">#                     yr = np.interp(f_new, f_old, np.real(S_old[:, i, j]))</span>
+<span class="c1">#                     yi = np.interp(f_new, f_old, np.imag(S_old[:, i, j]))</span>
+<span class="c1">#                     S_new[:, i, j] = yr + 1j * yi</span>
+<span class="c1">#             z0_old = data_ntw.z0</span>
+<span class="c1">#             if z0_old.ndim == 1:</span>
+<span class="c1">#                 z0_new = np.tile(z0_old[0], (len(f_new), 2))</span>
+<span class="c1">#             else:</span>
+<span class="c1">#                 z0_new = np.zeros((len(f_new), 2))</span>
+<span class="c1">#                 for p in range(2):</span>
+<span class="c1">#                     z0_new[:, p] = np.interp(f_new, f_old, z0_old[:, p])</span>
+<span class="c1">#             data_aligned = rf.Network(frequency=freq, s=S_new, z0=z0_new)</span>
+
+<span class="c1">#         f = freq.f</span>
+<span class="c1">#         n = cfg.n_widths</span>
+<span class="c1">#         mask11 = (f &gt; f0_s11 - n * kappa_s11) &amp; (f &lt; f0_s11 + n * kappa_s11)</span>
+<span class="c1">#         mask22 = (f &gt; f0_s22 - n * kappa_s22) &amp; (f &lt; f0_s22 + n * kappa_s22)</span>
+<span class="c1">#         mask21 = (f &gt; f0_s22 - n * kappa_s22) &amp; (f &lt; f0_s22 + n * kappa_s22)</span>
+
+<span class="c1">#         if not np.any(mask11):</span>
+<span class="c1">#             raise ValueError(&quot;S11 mask is empty: check f0_s11/kappa_s11/n_widths.&quot;)</span>
+<span class="c1">#         if not np.any(mask22):</span>
+<span class="c1">#             raise ValueError(&quot;S22 mask is empty: check f0_s22/kappa_s22/n_widths.&quot;)</span>
+<span class="c1">#         if not np.any(mask21):</span>
+<span class="c1">#             raise ValueError(&quot;S21 mask is empty: no frequencies outside S11/S22 windows.&quot;)</span>
+
+<span class="c1">#         freq11 = rf.Frequency.from_f(f[mask11], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq22 = rf.Frequency.from_f(f[mask22], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq21 = rf.Frequency.from_f(f[mask21], unit=&quot;Hz&quot;)</span>
+
+<span class="c1">#         s11_data = data_aligned.s[mask11, 0, 0]</span>
+<span class="c1">#         s22_data = data_aligned.s[mask22, 1, 1]</span>
+<span class="c1">#         s21_data = data_aligned.s[mask21, 1, 0]</span>
+<span class="c1">#         s12_data = data_aligned.s[mask21, 0, 1]</span>
+
+<span class="c1">#         def _depth(s_complex):</span>
+<span class="c1">#             m = np.abs(s_complex)</span>
+<span class="c1">#             return max(float(np.max(m) - np.min(m)), eps)</span>
+
+<span class="c1">#         S11_scale = _depth(s11_data)</span>
+<span class="c1">#         S22_scale = _depth(s22_data)</span>
+<span class="c1">#         depth_floor = max(S11_scale, S22_scale)</span>
+<span class="c1">#         S11_scale = max(S11_scale, depth_floor)</span>
+<span class="c1">#         S22_scale = max(S22_scale, depth_floor)</span>
+<span class="c1">#         S21_scale = max(_depth(s21_data), depth_floor)</span>
+
+<span class="c1">#         logger.debug(&quot;S11 depth scale=%.4e, N11=%d&quot;, S11_scale, mask11.sum())</span>
+<span class="c1">#         logger.debug(&quot;S22 depth scale=%.4e, N22=%d&quot;, S22_scale, mask22.sum())</span>
+<span class="c1">#         logger.debug(&quot;S21 depth scale=%.4e, N21=%d&quot;, S21_scale, mask21.sum())</span>
+
+<span class="c1">#         def residuals(x):</span>
+<span class="c1">#             Le, Ce, phi = float(x[0]), float(x[1]), float(x[2])</span>
+<span class="c1">#             phase = np.exp(1j * phi)</span>
+
+<span class="c1">#             lom11 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq11, Z0)</span>
+<span class="c1">#             lom22 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq22, Z0)</span>
+<span class="c1">#             lom21 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq21, Z0)</span>
+
+<span class="c1">#             r11 = lom11.s[:, 0, 0] * phase - s11_data</span>
+<span class="c1">#             r22 = lom22.s[:, 1, 1] * phase - s22_data</span>
+<span class="c1">#             r21 = lom21.s[:, 1, 0] * phase - s21_data</span>
+<span class="c1">#             #r12 = lom21.s[:, 0, 1] * phase - s12_data</span>
+
+<span class="c1">#             r11_sc = np.concatenate([r11.real, r11.imag]) / S11_scale</span>
+<span class="c1">#             r22_sc = np.concatenate([r22.real, r22.imag]) / S22_scale</span>
+<span class="c1">#             r21_sc = np.concatenate([r21.real, r21.imag]) / S21_scale</span>
+<span class="c1">#             #r12_sc = np.concatenate([r12.real, r12.imag]) / S21_scale</span>
+
+<span class="c1">#             return np.concatenate([r11_sc, r22_sc, r21_sc])</span>
+<span class="c1">#             #return np.concatenate([r11_sc, r22_sc, r21_sc, r12_sc])</span>
+
+<span class="c1">#         return residuals</span>
+    
+<span class="c1">#     def _make_windowed_residuals_z(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#         data_ntw: rf.Network,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         f0_s11: float,</span>
+<span class="c1">#         kappa_s11: float,</span>
+<span class="c1">#         f0_s22: float,</span>
+<span class="c1">#         kappa_s22: float,</span>
+<span class="c1">#         Z0: float,</span>
+<span class="c1">#         eps: float = 1e-18,</span>
+<span class="c1">#         ):</span>
+<span class="c1">#         cfg = self.config</span>
+<span class="c1">#         f_old = data_ntw.frequency.f</span>
+<span class="c1">#         f_new = freq.f</span>
+<span class="c1">#         if len(f_old) == len(f_new) and np.allclose(f_old, f_new):</span>
+<span class="c1">#             data_aligned = data_ntw</span>
+<span class="c1">#         else:</span>
+<span class="c1">#             S_old = data_ntw.s</span>
+<span class="c1">#             S_new = np.zeros((len(f_new), 2, 2), dtype=complex)</span>
+<span class="c1">#             for i in range(2):</span>
+<span class="c1">#                 for j in range(2):</span>
+<span class="c1">#                     yr = np.interp(f_new, f_old, np.real(S_old[:, i, j]))</span>
+<span class="c1">#                     yi = np.interp(f_new, f_old, np.imag(S_old[:, i, j]))</span>
+<span class="c1">#                     S_new[:, i, j] = yr + 1j * yi</span>
+<span class="c1">#             z0_old = data_ntw.z0</span>
+<span class="c1">#             if z0_old.ndim == 1:</span>
+<span class="c1">#                 z0_new = np.tile(z0_old[0], (len(f_new), 2))</span>
+<span class="c1">#             else:</span>
+<span class="c1">#                 z0_new = np.zeros((len(f_new), 2))</span>
+<span class="c1">#                 for p in range(2):</span>
+<span class="c1">#                     z0_new[:, p] = np.interp(f_new, f_old, z0_old[:, p])</span>
+<span class="c1">#             data_aligned = rf.Network(frequency=freq, s=S_new, z0=z0_new)</span>
+
+<span class="c1">#         f = freq.f</span>
+<span class="c1">#         n = cfg.n_widths</span>
+<span class="c1">#         mask11 = (f &gt; f0_s11 - n * kappa_s11) &amp; (f &lt; f0_s11 + n * kappa_s11)</span>
+<span class="c1">#         mask22 = (f &gt; f0_s22 - n * kappa_s22) &amp; (f &lt; f0_s22 + n * kappa_s22)</span>
+
+<span class="c1">#         if not np.any(mask11):</span>
+<span class="c1">#             raise ValueError(&quot;Z11 mask is empty: check f0_s11/kappa_s11/n_widths.&quot;)</span>
+<span class="c1">#         if not np.any(mask22):</span>
+<span class="c1">#             raise ValueError(&quot;Z22 mask is empty: check f0_s22/kappa_s22/n_widths.&quot;)</span>
+
+<span class="c1">#         freq11 = rf.Frequency.from_f(f[mask11], unit=&quot;Hz&quot;)</span>
+<span class="c1">#         freq22 = rf.Frequency.from_f(f[mask22], unit=&quot;Hz&quot;)</span>
+
+<span class="c1">#         # Use Z-parameters directly</span>
+<span class="c1">#         z11_data = data_aligned.z[mask11, 0, 0]</span>
+<span class="c1">#         z22_data = data_aligned.z[mask22, 1, 1]</span>
+
+<span class="c1">#         def _depth(z_complex):</span>
+<span class="c1">#             m = np.abs(z_complex)</span>
+<span class="c1">#             return max(float(np.max(m) - np.min(m)), eps)</span>
+
+<span class="c1">#         Z11_scale = _depth(z11_data)</span>
+<span class="c1">#         Z22_scale = _depth(z22_data)</span>
+<span class="c1">#         depth_floor = max(Z11_scale, Z22_scale)</span>
+<span class="c1">#         Z11_scale = max(Z11_scale, depth_floor)</span>
+<span class="c1">#         Z22_scale = max(Z22_scale, depth_floor)</span>
+
+<span class="c1">#         logger.debug(&quot;Z11 depth scale=%.4e, N11=%d&quot;, Z11_scale, mask11.sum())</span>
+<span class="c1">#         logger.debug(&quot;Z22 depth scale=%.4e, N22=%d&quot;, Z22_scale, mask22.sum())</span>
+
+<span class="c1">#         def residuals(x):</span>
+<span class="c1">#             Le, Ce = float(x[0]), float(x[1])</span>
+<span class="c1">#             lom11 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq11, Z0)</span>
+<span class="c1">#             lom22 = lc_resonator_network_2port(Le, Ce, Cc1, Cc2, freq22, Z0)</span>
+
+<span class="c1">#             r11 = lom11.z[:, 0, 0] - z11_data</span>
+<span class="c1">#             r22 = lom22.z[:, 1, 1] - z22_data</span>
+
+<span class="c1">#             r11_sc = np.concatenate([r11.real, r11.imag]) / Z11_scale</span>
+<span class="c1">#             r22_sc = np.concatenate([r22.real, r22.imag]) / Z22_scale</span>
+
+<span class="c1">#             return np.concatenate([r11_sc, r22_sc])</span>
+
+<span class="c1">#         return residuals</span>
+<span class="c1">#         # ------------------------------------------------------------------</span>
+<span class="c1">#     # fit()</span>
+<span class="c1">#     # ------------------------------------------------------------------</span>
+
+<span class="c1">#     def fit(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#         data_ntw: rf.Network,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         Ctog1: float,</span>
+<span class="c1">#         Ctog2: float,</span>
+<span class="c1">#         d: float,</span>
+<span class="c1">#         cpw_params: CPWParams,</span>
+<span class="c1">#         Z0: float = 50.0,</span>
+<span class="c1">#         **kwargs,</span>
+<span class="c1">#     ) -&gt; None:</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         Two-stage optimisation to fit Leff and Ceff to data_ntw.</span>
+
+<span class="c1">#         Stage 1: coarse Nelder-Mead scan over ω0, constrained Ceff.</span>
+<span class="c1">#             Uses an explicitly constructed 1-port CPW network so that the</span>
+<span class="c1">#             Stage 1 data points come from a true single-port reflection</span>
+<span class="c1">#             measurement rather than a 2-port S11 view.</span>
+<span class="c1">#         Stage 2: windowed least_squares refinement on S11 + S22.</span>
+
+<span class="c1">#         Parameters</span>
+<span class="c1">#         ----------</span>
+<span class="c1">#         freq : rf.Frequency</span>
+<span class="c1">#             Frequency grid for the optimisation (should be centred on the</span>
+<span class="c1">#             resonance with enough bandwidth to capture the linewidth).</span>
+<span class="c1">#         data_ntw : rf.Network</span>
+<span class="c1">#             2-port reference network (CPW model or measured data).</span>
+<span class="c1">#             Used for Stage 2 S11 + S22 residuals.</span>
+<span class="c1">#         Cc1, Cc2 : float</span>
+<span class="c1">#             Coupling capacitances in Farads.</span>
+<span class="c1">#         Ctog1, Ctog2 : float</span>
+<span class="c1">#             Shunt-to-ground capacitances in Farads.</span>
+<span class="c1">#         d : float</span>
+<span class="c1">#             Resonator length in metres — used to build the 1-port CPW network.</span>
+<span class="c1">#         cpw_params : CPWParams</span>
+<span class="c1">#             CPW geometry — used to build the 1-port CPW network.</span>
+<span class="c1">#         Z0 : float</span>
+<span class="c1">#             Reference impedance in Ohms.</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         from simpleLOMs.networks.cpw import cpw_resonator_network</span>
+
+<span class="c1">#         cfg = self.config</span>
+
+<span class="c1">#         # --- Stage 1: explicit 1-port CPW network ---</span>
+<span class="c1">#         single_port_ntw = cpw_resonator_network(</span>
+<span class="c1">#             freq, d, Cc1, Cc2, Ctog1, Ctog2,</span>
+<span class="c1">#             cpw_params=cpw_params, Z0=Z0,</span>
+<span class="c1">#         )</span>
+
+<span class="c1">#         data_points = self._build_sparse_data_points(</span>
+<span class="c1">#             single_port_ntw,</span>
+<span class="c1">#             n_dense=cfg.n_dense,</span>
+<span class="c1">#             n_kappa=cfg.n_kappa,</span>
+<span class="c1">#         )</span>
+<span class="c1">#         w0_guess = resonance_from_res11(single_port_ntw) * 2 * np.pi</span>
+
+<span class="c1">#         Ceff_guess, Leff_guess, w0_best, scan_results = self._fit_Ceff_Leff(</span>
+<span class="c1">#             w0_guess=w0_guess,</span>
+<span class="c1">#             Cc1=Cc1,</span>
+<span class="c1">#             Cc2=Cc2,</span>
+<span class="c1">#             Z0=Z0,</span>
+<span class="c1">#             data_points=data_points,</span>
+<span class="c1">#             freq=freq,</span>
+<span class="c1">#         )</span>
+<span class="c1">#         self.scan_results = scan_results</span>
+<span class="c1">#         logger.debug(&quot;Stage 1: L_guess=%.4e H, C_guess=%.4e F&quot;, Leff_guess, Ceff_guess)</span>
+
+<span class="c1">#         # --- Stage 2: 2-port windowed least_squares ---</span>
+<span class="c1">#         kappa_s11 = fwhm_from_trace_db(data_ntw, m=0, n=0, kind=&quot;dip&quot;)</span>
+<span class="c1">#         kappa_s22 = fwhm_from_trace_db(data_ntw, m=1, n=1, kind=&quot;dip&quot;)</span>
+<span class="c1">#         f0_s11    = resonance(data_ntw, m=0, n=0)</span>
+<span class="c1">#         f0_s22    = resonance(data_ntw, m=1, n=1)</span>
+<span class="c1">#         f0_s21    = resonance_from_s_max(data_ntw, m=1, n=0)</span>
+<span class="c1">#         f0_s12    = resonance_from_s_max(data_ntw, m=0, n=1)</span>
+
+<span class="c1">#         residuals_fn = self._make_windowed_residuals(</span>
+<span class="c1">#             freq=freq,</span>
+<span class="c1">#             data_ntw=data_ntw,</span>
+<span class="c1">#             Cc1=Cc1,</span>
+<span class="c1">#             Cc2=Cc2,</span>
+<span class="c1">#             f0_s11=f0_s11,</span>
+<span class="c1">#             kappa_s11=kappa_s11,</span>
+<span class="c1">#             f0_s22=f0_s22,</span>
+<span class="c1">#             kappa_s22=kappa_s22,</span>
+<span class="c1">#             Z0=Z0,</span>
+<span class="c1">#             # f0_s12 = f0_s12,</span>
+<span class="c1">#             # f0_s21 = f0_s21,</span>
+<span class="c1">#         )</span>
+
+<span class="c1">#         res = least_squares(</span>
+<span class="c1">#             residuals_fn,</span>
+<span class="c1">#             x0=(Leff_guess, Ceff_guess),</span>
+<span class="c1">#             bounds=(</span>
+<span class="c1">#                 [Leff_guess - 2e-10, Ceff_guess - 2e-13],</span>
+<span class="c1">#                 [Leff_guess + 2e-10, Ceff_guess + 2e-13],</span>
+<span class="c1">#             ),</span>
+<span class="c1">#             method=&quot;trf&quot;,</span>
+<span class="c1">#             jac=&quot;3-point&quot;,</span>
+<span class="c1">#             diff_step=1e-4,</span>
+<span class="c1">#             x_scale=&quot;jac&quot;,</span>
+<span class="c1">#             xtol=1e-15,</span>
+<span class="c1">#             ftol=1e-15,</span>
+<span class="c1">#             gtol=1e-15,</span>
+<span class="c1">#             max_nfev=cfg.max_nfev,</span>
+<span class="c1">#             verbose=2 if cfg.verbose else 0,</span>
+<span class="c1">#         )</span>
+
+<span class="c1">#         self.L = float(res.x[0])</span>
+<span class="c1">#         self.C = float(res.x[1])</span>
+<span class="c1">#         logger.debug(&quot;Stage 2 result: L=%.4e H, C=%.4e F&quot;, self.L, self.C)</span>
+
+<span class="c1">#     # ------------------------------------------------------------------</span>
+<span class="c1">#     # get_network()</span>
+<span class="c1">#     # ------------------------------------------------------------------</span>
+
+<span class="c1">#     def get_network(</span>
+<span class="c1">#         self,</span>
+<span class="c1">#         freq: rf.Frequency,</span>
+<span class="c1">#         Cc1: float,</span>
+<span class="c1">#         Cc2: float,</span>
+<span class="c1">#         Z0: float = 50.0,</span>
+<span class="c1">#         with_grounds: bool = False,</span>
+<span class="c1">#         Ctog1: float = None,</span>
+<span class="c1">#         Ctog2: float = None,</span>
+<span class="c1">#         **kwargs,</span>
+<span class="c1">#     ) -&gt; rf.Network:</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         Build the 2-port LC LOM network from the optimised L and C.</span>
+
+<span class="c1">#         Parameters</span>
+<span class="c1">#         ----------</span>
+<span class="c1">#         freq : rf.Frequency</span>
+<span class="c1">#         Cc1, Cc2 : float</span>
+<span class="c1">#             Coupling capacitances in Farads.</span>
+<span class="c1">#         Z0 : float</span>
+<span class="c1">#             Reference impedance in Ohms.</span>
+<span class="c1">#         with_grounds : bool</span>
+<span class="c1">#             If True, include Ctog1/Ctog2 shunt caps (requires them to</span>
+<span class="c1">#             be provided).</span>
+<span class="c1">#         Ctog1, Ctog2 : float or None</span>
+<span class="c1">#             Required when with_grounds=True.</span>
+
+<span class="c1">#         Returns</span>
+<span class="c1">#         -------</span>
+<span class="c1">#         rf.Network</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         self._require_fitted()</span>
+
+<span class="c1">#         if with_grounds:</span>
+<span class="c1">#             if Ctog1 is None or Ctog2 is None:</span>
+<span class="c1">#                 raise ValueError(&quot;Ctog1 and Ctog2 must be provided when with_grounds=True.&quot;)</span>
+<span class="c1">#             return lc_resonator_network_with_grounds_2port(</span>
+<span class="c1">#                 Leff=self.L, Ceff=self.C,</span>
+<span class="c1">#                 Cc1=Cc1, Cc2=Cc2,</span>
+<span class="c1">#                 Ctog1=Ctog1, Ctog2=Ctog2,</span>
+<span class="c1">#                 freq=freq, Z0=Z0,</span>
+<span class="c1">#             )</span>
+
+<span class="c1">#         return lc_resonator_network_2port(</span>
+<span class="c1">#             Leff=self.L, Ceff=self.C,</span>
+<span class="c1">#             Cc1=Cc1, Cc2=Cc2,</span>
+<span class="c1">#             freq=freq, Z0=Z0,</span>
+<span class="c1">#         )</span>
+
+<span class="c1">#     # ------------------------------------------------------------------</span>
+<span class="c1">#     # get_params()</span>
+<span class="c1">#     # ------------------------------------------------------------------</span>
+
+<span class="c1">#     def get_params(self) -&gt; dict:</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         Return fitted parameters and scan diagnostics.</span>
+
+<span class="c1">#         Returns</span>
+<span class="c1">#         -------</span>
+<span class="c1">#         dict</span>
+<span class="c1">#             Keys: &quot;L&quot; (H), &quot;C&quot; (F), &quot;scan_results&quot; (ndarray or None).</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         self._require_fitted()</span>
+<span class="c1">#         return {</span>
+<span class="c1">#             &quot;L&quot;:            self.L,</span>
+<span class="c1">#             &quot;C&quot;:            self.C,</span>
+<span class="c1">#             &quot;scan_results&quot;: self.scan_results,</span>
+<span class="c1">#         }</span>
+
+<span class="c1">#     def __repr__(self) -&gt; str:</span>
+<span class="c1">#         if self.is_fitted:</span>
+<span class="c1">#             return &quot;OptimizedFit(L={:.4e} H, C={:.4e} F)&quot;.format(self.L, self.C)</span>
+<span class="c1">#         return &quot;OptimizedFit(unfitted)&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">models/optimized_fit.py</span>
+<span class="sd">-----------------------</span>
+<span class="sd">OptimizedFit: numerical optimization over configurable S-parameter residuals</span>
+<span class="sd">to find the best-fit effective L, C (and optionally phase) for a CPW resonator.</span>
+
+<span class="sd">Algorithm summary</span>
+<span class="sd">-----------------</span>
+<span class="sd">Stage 1 — coarse scan (fit_Ceff_Leff):</span>
+<span class="sd">    Scan ω0 in a window around the measured resonance.  For each ω0,</span>
+<span class="sd">    use Nelder-Mead to optimise Leff with Ceff forced by the resonance</span>
+<span class="sd">    constraint ω0² * L * (C + Cc1 + Cc2) = 1.  Keep the best (L, C).</span>
+
+<span class="sd">Stage 2 — windowed refinement (least_squares):</span>
+<span class="sd">    Build separate frequency windows around the S11 / S22 / S21 / S12</span>
+<span class="sd">    resonances (controlled by OptimizationConfig.params).  Minimise the</span>
+<span class="sd">    complex residuals of the 2-port LC network against the CPW reference</span>
+<span class="sd">    network.  Phase is optionally included as a free parameter.</span>
+
+<span class="sd">Key new knobs in OptimizationConfig</span>
+<span class="sd">------------------------------------</span>
+<span class="sd">fit_phase : bool</span>
+<span class="sd">    If True, a global complex phase e^{i·φ} is fitted together with L and C.</span>
+<span class="sd">    The fitted phase is stored in self.phase after fit().</span>
+<span class="sd">s_params : sequence of str  (subset of {&quot;S11&quot;,&quot;S22&quot;,&quot;S21&quot;,&quot;S12&quot;})</span>
+<span class="sd">    Which S-parameter channels to include in the Stage 2 residual.</span>
+<span class="sd">    Default: (&quot;S11&quot;, &quot;S22&quot;).</span>
+<span class="sd">weights : dict[str, float] or None</span>
+<span class="sd">    Per-channel weight (before depth normalisation).  Pass None to weight</span>
+<span class="sd">    all included channels equally (weight = 1.0).</span>
+<span class="sd">    Example: {&quot;S11&quot;: 2.0, &quot;S21&quot;: 1.0} — S11 counts twice as much as S21.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sequence</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">minimize</span><span class="p">,</span> <span class="n">least_squares</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.analysis</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">resonance_from_res11</span><span class="p">,</span>
+    <span class="n">fwhm_from_res11</span><span class="p">,</span>
+    <span class="n">fwhm_from_trace_db</span><span class="p">,</span>
+    <span class="n">resonance</span><span class="p">,</span>
+    <span class="c1"># resonance_from_s_max intentionally not imported: see fit() comments.</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.lc</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">lc_resonator_network</span><span class="p">,</span>
+    <span class="n">lc_resonator_network_2port</span><span class="p">,</span>
+    <span class="n">lc_resonator_network_2port_shifted</span><span class="p">,</span>
+    <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># S-parameter channel registry</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="c1"># Maps channel name → (data matrix row, col)  in skrf convention</span>
+<span class="n">_CHANNEL_IDX</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;S11&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="s2">&quot;S22&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="s2">&quot;S21&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="s2">&quot;S12&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="c1"># Which &quot;resonance&quot; function to use for each channel</span>
+<span class="n">_REFLECTION_CHANNELS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;S11&quot;</span><span class="p">,</span> <span class="s2">&quot;S22&quot;</span><span class="p">}</span>
+<span class="n">_TRANSMISSION_CHANNELS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;S21&quot;</span><span class="p">,</span> <span class="s2">&quot;S12&quot;</span><span class="p">}</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Helper dataclass for optimizer hyperparameters</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OptimizationConfig">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.OptimizationConfig">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">OptimizationConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tuning knobs for the two-stage OptimizedFit algorithm.</span>
+
+<span class="sd">    Core algorithm knobs</span>
+<span class="sd">    --------------------</span>
+<span class="sd">    w0_window_frac : float</span>
+<span class="sd">        Half-width of the ω0 scan window as a fraction of ω0_guess.</span>
+<span class="sd">    n_w0 : int</span>
+<span class="sd">        Number of ω0 grid points in the coarse scan.</span>
+<span class="sd">    n_dense : int</span>
+<span class="sd">        Number of data points sampled around resonance in Stage 1.</span>
+<span class="sd">    n_kappa : float</span>
+<span class="sd">        Half-width of the dense sampling window in units of κ (linewidth).</span>
+<span class="sd">    n_widths : float</span>
+<span class="sd">        Half-width of each residual window in Stage 2, in units of κ.</span>
+<span class="sd">    max_nfev : int</span>
+<span class="sd">        Maximum function evaluations for the Stage 2 least_squares call.</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        If True, least_squares prints iteration progress.</span>
+
+<span class="sd">    Residual configuration</span>
+<span class="sd">    ----------------------</span>
+<span class="sd">    fit_phase : bool</span>
+<span class="sd">        If True, a global scalar phase φ is added to the free parameters so</span>
+<span class="sd">        that the model prediction is e^{i·φ} · S_model.  The fitted phase is</span>
+<span class="sd">        stored in OptimizedFit.phase (radians) after fit().</span>
+<span class="sd">    s_params : sequence of str</span>
+<span class="sd">        Which S-parameter channels to include in Stage 2.  Any non-empty</span>
+<span class="sd">        subset of {&quot;S11&quot;, &quot;S22&quot;, &quot;S21&quot;, &quot;S12&quot;}.  Default: (&quot;S11&quot;, &quot;S22&quot;).</span>
+<span class="sd">    weights : dict[str, float] or None</span>
+<span class="sd">        Manual per-channel weight multipliers applied *after* depth</span>
+<span class="sd">        normalisation.  None → equal weights (all 1.0).</span>
+<span class="sd">        Example: {&quot;S11&quot;: 2.0, &quot;S22&quot;: 2.0, &quot;S21&quot;: 1.0}</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># --- algorithm ---</span>
+    <span class="n">w0_window_frac</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.00001</span>
+    <span class="n">n_w0</span><span class="p">:</span>           <span class="nb">int</span>   <span class="o">=</span> <span class="mi">20</span>
+    <span class="n">n_dense</span><span class="p">:</span>        <span class="nb">int</span>   <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">n_kappa</span><span class="p">:</span>        <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.75</span>
+    <span class="n">n_widths</span><span class="p">:</span>       <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="n">max_nfev</span><span class="p">:</span>       <span class="nb">int</span>   <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">verbose</span><span class="p">:</span>        <span class="nb">bool</span>  <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="c1"># --- residual options ---</span>
+    <span class="n">fit_phase</span><span class="p">:</span> <span class="nb">bool</span>                          <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">s_params</span><span class="p">:</span>  <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>                 <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;S11&quot;</span><span class="p">,</span> <span class="s2">&quot;S22&quot;</span><span class="p">])</span>
+    <span class="n">weights</span><span class="p">:</span>   <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>       <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Normalise s_params to upper-case and validate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s_params</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_params</span><span class="p">]</span>
+        <span class="n">unknown</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s_params</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">_CHANNEL_IDX</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">unknown</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown s_params channels: </span><span class="si">{</span><span class="n">unknown</span><span class="si">}</span><span class="s2">. &quot;</span>
+                             <span class="sa">f</span><span class="s2">&quot;Valid choices: </span><span class="si">{</span><span class="nb">set</span><span class="p">(</span><span class="n">_CHANNEL_IDX</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_params</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;s_params must contain at least one channel.&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="OptimizationConfig.channel_weight">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.OptimizationConfig.channel_weight">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">channel_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the manual weight for a channel (default 1.0).&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># OptimizedFit class</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OptimizedFit">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.OptimizedFit">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OptimizedFit</span><span class="p">(</span><span class="n">BaseFit</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lumped LC model via two-stage numerical optimisation.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    config : OptimizationConfig, optional</span>
+<span class="sd">        Hyperparameters and residual options.  Defaults to</span>
+<span class="sd">        OptimizationConfig() (S11 + S22, no phase fitting).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    L : float or None</span>
+<span class="sd">        Fitted effective inductance in Henries.</span>
+<span class="sd">    C : float or None</span>
+<span class="sd">        Fitted effective capacitance in Farads.</span>
+<span class="sd">    phase : float or None</span>
+<span class="sd">        Fitted global phase in radians.  None if config.fit_phase is False</span>
+<span class="sd">        or before fit() is called.</span>
+<span class="sd">    scan_results : np.ndarray or None</span>
+<span class="sd">        Diagnostic array from the Stage 1 ω0 scan, shape (n_w0, 4):</span>
+<span class="sd">        columns are [ω0, Ceff, Leff, sse].</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    ::</span>
+
+<span class="sd">        from simpleLOMs.models.optimized_fit import OptimizedFit, OptimizationConfig</span>
+
+<span class="sd">        # Fit using only S21, with phase as a free parameter</span>
+<span class="sd">        cfg   = OptimizationConfig(s_params=[&quot;S21&quot;], fit_phase=True)</span>
+<span class="sd">        model = OptimizedFit(config=cfg)</span>
+<span class="sd">        model.fit(freq, data_ntw=cpw_net, Cc1=3e-14, Cc2=7e-14,</span>
+<span class="sd">                  Ctog1=4e-14, Ctog2=6e-14, d=7e-3,</span>
+<span class="sd">                  cpw_params=cpw_params, Z0=50)</span>
+<span class="sd">        print(model)           # OptimizedFit(L=…, C=…, phase=…)</span>
+<span class="sd">        net = model.get_network(freq, Cc1=3e-14, Cc2=7e-14, Z0=50)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">OptimizationConfig</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">:</span>       <span class="n">OptimizationConfig</span>   <span class="o">=</span> <span class="n">config</span> <span class="k">if</span> <span class="n">config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">OptimizationConfig</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">:</span>            <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>         <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">:</span>            <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>         <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phase</span><span class="p">:</span>        <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>         <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scan_results</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>    <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_align_network</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data_ntw</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Interpolate data_ntw onto freq if the grids differ.&quot;&quot;&quot;</span>
+        <span class="n">f_old</span> <span class="o">=</span> <span class="n">data_ntw</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+        <span class="n">f_new</span> <span class="o">=</span> <span class="n">freq</span><span class="o">.</span><span class="n">f</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">f_old</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">f_new</span><span class="p">)</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">f_old</span><span class="p">,</span> <span class="n">f_new</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">data_ntw</span>
+        <span class="n">S_old</span> <span class="o">=</span> <span class="n">data_ntw</span><span class="o">.</span><span class="n">s</span>
+        <span class="n">S_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">f_new</span><span class="p">),</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">complex</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+                <span class="n">S_new</span><span class="p">[:,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">f_new</span><span class="p">,</span> <span class="n">f_old</span><span class="p">,</span> <span class="n">S_old</span><span class="p">[:,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">real</span><span class="p">)</span>
+                    <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">f_new</span><span class="p">,</span> <span class="n">f_old</span><span class="p">,</span> <span class="n">S_old</span><span class="p">[:,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">imag</span><span class="p">)</span>
+                <span class="p">)</span>
+        <span class="n">z0_old</span> <span class="o">=</span> <span class="n">data_ntw</span><span class="o">.</span><span class="n">z0</span>
+        <span class="k">if</span> <span class="n">z0_old</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">z0_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">z0_old</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">f_new</span><span class="p">),</span> <span class="mi">2</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">z0_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">f_new</span><span class="p">),</span> <span class="mi">2</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+                <span class="n">z0_new</span><span class="p">[:,</span> <span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">f_new</span><span class="p">,</span> <span class="n">f_old</span><span class="p">,</span> <span class="n">z0_old</span><span class="p">[:,</span> <span class="n">p</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">(</span><span class="n">frequency</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="n">S_new</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">z0_new</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_sparse_data_points</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data_ntw</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+        <span class="n">n_dense</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_kappa</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build a sparse, physically-motivated set of (ω, Re(S11), Im(S11)) tuples</span>
+<span class="sd">        for Stage 1.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f_hz</span>   <span class="o">=</span> <span class="n">data_ntw</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+        <span class="n">w</span>      <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f_hz</span>
+        <span class="n">S11</span>    <span class="o">=</span> <span class="n">data_ntw</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">re_s11</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">S11</span><span class="p">)</span>
+        <span class="n">im_s11</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">imag</span><span class="p">(</span><span class="n">S11</span><span class="p">)</span>
+
+        <span class="n">idx_re_min</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">re_s11</span><span class="p">)</span>
+        <span class="n">data_points</span> <span class="o">=</span> <span class="p">[(</span><span class="n">w</span><span class="p">[</span><span class="n">idx_re_min</span><span class="p">],</span> <span class="n">re_s11</span><span class="p">[</span><span class="n">idx_re_min</span><span class="p">],</span> <span class="n">im_s11</span><span class="p">[</span><span class="n">idx_re_min</span><span class="p">])]</span>
+
+        <span class="k">if</span> <span class="n">n_dense</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">f0</span>    <span class="o">=</span> <span class="n">f_hz</span><span class="p">[</span><span class="n">idx_re_min</span><span class="p">]</span>
+            <span class="n">kappa</span> <span class="o">=</span> <span class="n">fwhm_from_res11</span><span class="p">(</span><span class="n">data_ntw</span><span class="p">)</span>
+            <span class="n">f_dense</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span>
+                <span class="n">f0</span> <span class="o">-</span> <span class="n">n_kappa</span> <span class="o">*</span> <span class="n">kappa</span><span class="p">,</span>
+                <span class="n">f0</span> <span class="o">+</span> <span class="p">(</span><span class="n">n_kappa</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">kappa</span><span class="p">,</span>
+                <span class="n">n_dense</span> <span class="o">+</span> <span class="mi">2</span><span class="p">,</span>
+            <span class="p">)[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">re_dense</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">f_dense</span><span class="p">,</span> <span class="n">f_hz</span><span class="p">,</span> <span class="n">re_s11</span><span class="p">)</span>
+            <span class="n">im_dense</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">f_dense</span><span class="p">,</span> <span class="n">f_hz</span><span class="p">,</span> <span class="n">im_s11</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">f_pt</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">f_dense</span><span class="p">,</span> <span class="n">re_dense</span><span class="p">,</span> <span class="n">im_dense</span><span class="p">):</span>
+                <span class="n">data_points</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f_pt</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">data_points</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fit_Ceff_Leff</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">w0_guess</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">data_points</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Stage 1: scan ω0 and fit Leff by Nelder-Mead with Ceff constrained.</span>
+
+<span class="sd">        Returns (Ceff_best, Leff_best, w0_best, scan_results).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cfg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span>
+        <span class="n">dp</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_points</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">freqs</span>  <span class="o">=</span> <span class="n">dp</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">dp</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">dp</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">ZCc1</span><span class="p">(</span><span class="n">w</span><span class="p">):</span>        <span class="k">return</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">*</span> <span class="n">Cc1</span><span class="p">)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">ZCc2</span><span class="p">(</span><span class="n">w</span><span class="p">):</span>        <span class="k">return</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">*</span> <span class="n">Cc2</span><span class="p">)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">ZLC</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">):</span> <span class="k">return</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">/</span> <span class="p">(</span><span class="n">Le</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">w</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">Le</span><span class="o">*</span><span class="n">Ce</span><span class="p">))</span> <span class="k">if</span> <span class="kc">False</span>
+                                           <span class="k">else</span> <span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">w</span><span class="o">*</span><span class="n">Le</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">w</span><span class="o">*</span><span class="n">Ce</span><span class="p">)</span><span class="o">**-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Simpler inline version used below</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">S11_fn</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">):</span>
+            <span class="n">ZL</span>  <span class="o">=</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">*</span> <span class="n">Le</span>
+            <span class="n">ZC</span>  <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">*</span> <span class="n">Ce</span><span class="p">)</span>
+            <span class="n">ZLC</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="n">ZL</span> <span class="o">+</span> <span class="mf">1.0</span><span class="o">/</span><span class="n">ZC</span><span class="p">)</span>
+            <span class="n">Zsh</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="n">ZLC</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">*</span> <span class="n">Cc2</span><span class="p">)</span>
+            <span class="n">Zin</span> <span class="o">=</span> <span class="mf">1.0</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">w</span> <span class="o">*</span> <span class="n">Cc1</span><span class="p">)</span> <span class="o">+</span> <span class="n">Zsh</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">Zin</span> <span class="o">-</span> <span class="n">Z0</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">Zin</span> <span class="o">+</span> <span class="n">Z0</span><span class="p">)</span>
+
+        <span class="n">w0_min</span>  <span class="o">=</span> <span class="n">w0_guess</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">cfg</span><span class="o">.</span><span class="n">w0_window_frac</span><span class="p">)</span>
+        <span class="n">w0_max</span>  <span class="o">=</span> <span class="n">w0_guess</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">cfg</span><span class="o">.</span><span class="n">w0_window_frac</span><span class="p">)</span>
+        <span class="n">w0_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">w0_min</span><span class="p">,</span> <span class="n">w0_max</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">n_w0</span><span class="p">))</span>
+
+        <span class="n">best</span>    <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">w0</span> <span class="ow">in</span> <span class="n">w0_grid</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">ceff_of_L</span><span class="p">(</span><span class="n">Le</span><span class="p">):</span>
+                <span class="k">return</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">Le</span> <span class="o">*</span> <span class="p">(</span><span class="n">w0</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span> <span class="o">-</span> <span class="p">(</span><span class="n">Cc1</span> <span class="o">+</span> <span class="n">Cc2</span><span class="p">)</span>
+
+            <span class="n">Le_max</span>   <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">((</span><span class="n">Cc1</span> <span class="o">+</span> <span class="n">Cc2</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">w0</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+            <span class="n">Le_upper</span> <span class="o">=</span> <span class="mf">0.999</span> <span class="o">*</span> <span class="n">Le_max</span>
+            <span class="n">x0_local</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">Le_upper</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">obj</span><span class="p">(</span><span class="n">Le_arr</span><span class="p">):</span>
+                <span class="n">Le</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">Le_arr</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;</span> <span class="n">Le</span> <span class="o">&lt;</span> <span class="n">Le_upper</span><span class="p">):</span>
+                    <span class="n">dist</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">-</span> <span class="n">Le</span><span class="p">)</span> <span class="k">if</span> <span class="n">Le</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="p">(</span><span class="n">Le</span> <span class="o">-</span> <span class="n">Le_upper</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="mf">1e6</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">dist</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="n">Ce</span> <span class="o">=</span> <span class="n">ceff_of_L</span><span class="p">(</span><span class="n">Le</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">Ce</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">Ce</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="mf">1e6</span>
+                <span class="n">pred</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">S11_fn</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">freqs</span><span class="p">])</span>
+                <span class="n">resid</span> <span class="o">=</span> <span class="n">pred</span> <span class="o">-</span> <span class="n">target</span>
+                <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">resid</span><span class="o">.</span><span class="n">real</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">resid</span><span class="o">.</span><span class="n">imag</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+
+            <span class="n">fit</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span>
+                <span class="n">obj</span><span class="p">,</span>
+                <span class="n">x0</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x0_local</span><span class="p">]),</span>
+                <span class="n">method</span><span class="o">=</span><span class="s2">&quot;Nelder-Mead&quot;</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">maxiter</span><span class="o">=</span><span class="mi">3000</span><span class="p">,</span> <span class="n">xatol</span><span class="o">=</span><span class="mf">1e-30</span><span class="p">,</span> <span class="n">fatol</span><span class="o">=</span><span class="mf">1e-30</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+            <span class="p">)</span>
+
+            <span class="n">Le_hat</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">fit</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">nextafter</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">Le_upper</span><span class="p">))</span>
+            <span class="n">Ce_hat</span> <span class="o">=</span> <span class="n">ceff_of_L</span><span class="p">(</span><span class="n">Le_hat</span><span class="p">)</span>
+            <span class="n">sse</span>    <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">fit</span><span class="o">.</span><span class="n">fun</span><span class="p">)</span>
+            <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">w0</span><span class="p">,</span> <span class="n">Ce_hat</span><span class="p">,</span> <span class="n">Le_hat</span><span class="p">,</span> <span class="n">sse</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="n">best</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">sse</span> <span class="o">&lt;</span> <span class="n">best</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+                <span class="n">best</span> <span class="o">=</span> <span class="p">(</span><span class="n">w0</span><span class="p">,</span> <span class="n">Ce_hat</span><span class="p">,</span> <span class="n">Le_hat</span><span class="p">,</span> <span class="n">sse</span><span class="p">)</span>
+
+        <span class="n">w0_best</span><span class="p">,</span> <span class="n">Ceff_best</span><span class="p">,</span> <span class="n">Leff_best</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">best</span>
+        <span class="k">return</span> <span class="n">Ceff_best</span><span class="p">,</span> <span class="n">Leff_best</span><span class="p">,</span> <span class="n">w0_best</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># _make_windowed_residuals  (unified, replaces the four old variants)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_windowed_residuals</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+        <span class="n">data_ntw</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">f0_s11</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">kappa_s11</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">f0_s22</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">kappa_s22</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">f0_s21</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">f0_s12</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-18</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Stage 2: build the windowed residual function for least_squares.</span>
+
+<span class="sd">        The returned callable signature depends on config.fit_phase:</span>
+<span class="sd">          - fit_phase=False  →  residuals(x)  where x = [Leff, Ceff]</span>
+<span class="sd">          - fit_phase=True   →  residuals(x)  where x = [Leff, Ceff, phi]</span>
+
+<span class="sd">        Channels included and their weights are taken from config.s_params</span>
+<span class="sd">        and config.weights.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cfg</span>            <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span>
+        <span class="n">data_aligned</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_align_network</span><span class="p">(</span><span class="n">data_ntw</span><span class="p">,</span> <span class="n">freq</span><span class="p">)</span>
+        <span class="n">f</span>              <span class="o">=</span> <span class="n">freq</span><span class="o">.</span><span class="n">f</span>
+        <span class="n">n</span>              <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">n_widths</span>
+
+        <span class="c1"># --- build per-channel masks ---</span>
+        <span class="c1"># Each channel is windowed around its own resonance frequency.</span>
+        <span class="c1"># For S21/S12 we use f0_s21/f0_s12 and the S11 linewidth as a</span>
+        <span class="c1"># proxy for kappa (transmission FWHM == reflection FWHM for a</span>
+        <span class="c1"># symmetric Lorentzian, and we have no independent kappa_tx yet).</span>
+        <span class="c1"># Using f0_s11 as the S21 anchor was wrong: it can miss the peak</span>
+        <span class="c1"># entirely when the two ports couple differently.</span>
+        <span class="c1"># Transmission channels use a 2× wider window than n_widths because</span>
+        <span class="c1"># the S21/S12 Lorentzian tail is much broader in dB and we need</span>
+        <span class="c1"># enough off-peak points for the optimizer to see the correct shape.</span>
+        <span class="c1"># Reflection channels keep the tighter n_widths window.</span>
+        <span class="n">n_tx</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">n</span> <span class="o">*</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">)</span>
+        <span class="n">masks</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;S11&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">f</span> <span class="o">&gt;</span> <span class="n">f0_s11</span> <span class="o">-</span> <span class="n">n</span>    <span class="o">*</span> <span class="n">kappa_s11</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">f</span> <span class="o">&lt;</span> <span class="n">f0_s11</span> <span class="o">+</span> <span class="n">n</span>    <span class="o">*</span> <span class="n">kappa_s11</span><span class="p">),</span>
+            <span class="s2">&quot;S22&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">f</span> <span class="o">&gt;</span> <span class="n">f0_s22</span> <span class="o">-</span> <span class="n">n</span>    <span class="o">*</span> <span class="n">kappa_s22</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">f</span> <span class="o">&lt;</span> <span class="n">f0_s22</span> <span class="o">+</span> <span class="n">n</span>    <span class="o">*</span> <span class="n">kappa_s22</span><span class="p">),</span>
+            <span class="s2">&quot;S21&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">f</span> <span class="o">&gt;</span> <span class="n">f0_s21</span> <span class="o">-</span> <span class="n">n</span> <span class="o">*</span> <span class="n">kappa_s11</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">f</span> <span class="o">&lt;</span> <span class="n">f0_s21</span> <span class="o">+</span> <span class="n">n</span> <span class="o">*</span> <span class="n">kappa_s11</span><span class="p">),</span>
+            <span class="s2">&quot;S12&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">f</span> <span class="o">&gt;</span> <span class="n">f0_s12</span> <span class="o">-</span> <span class="n">n</span> <span class="o">*</span> <span class="n">kappa_s11</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">f</span> <span class="o">&lt;</span> <span class="n">f0_s12</span> <span class="o">+</span> <span class="n">n</span> <span class="o">*</span> <span class="n">kappa_s11</span><span class="p">),</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Validate masks for requested channels</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">masks</span><span class="p">[</span><span class="n">ch</span><span class="p">]):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ch</span><span class="si">}</span><span class="s2"> mask is empty — check the resonance frequency / &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;linewidth / n_widths settings.&quot;</span>
+                <span class="p">)</span>
+
+        <span class="c1"># --- extract windowed data and build depth scales ---</span>
+        <span class="n">ch_freqs</span> <span class="o">=</span> <span class="p">{}</span>   <span class="c1"># channel → rf.Frequency</span>
+        <span class="n">ch_data</span>  <span class="o">=</span> <span class="p">{}</span>   <span class="c1"># channel → complex S array</span>
+        <span class="n">ch_scale</span> <span class="o">=</span> <span class="p">{}</span>   <span class="c1"># channel → depth normalisation scalar</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_depth</span><span class="p">(</span><span class="n">s_complex</span><span class="p">):</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">s_complex</span><span class="p">)</span>
+            <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">m</span><span class="p">)),</span> <span class="n">eps</span><span class="p">)</span>
+
+        <span class="c1"># Compute per-group depth floors separately for reflection and</span>
+        <span class="c1"># transmission channels.  Mixing them causes a fatal scale mismatch:</span>
+        <span class="c1"># S21/S12 have ~0.4–0.5 linear depth while S11/S22 have ~0.01–0.1,</span>
+        <span class="c1"># so a shared floor either drowns the transmission residual (if</span>
+        <span class="c1"># reflection dominates) or inflates it by 10× (the reverse).</span>
+        <span class="n">refl_depths</span> <span class="o">=</span> <span class="p">[</span><span class="n">_depth</span><span class="p">(</span><span class="n">data_aligned</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="n">masks</span><span class="p">[</span><span class="n">ch</span><span class="p">],</span> <span class="n">_CHANNEL_IDX</span><span class="p">[</span><span class="n">ch</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">_CHANNEL_IDX</span><span class="p">[</span><span class="n">ch</span><span class="p">][</span><span class="mi">1</span><span class="p">]])</span>
+                       <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span> <span class="k">if</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">_REFLECTION_CHANNELS</span><span class="p">]</span>
+        <span class="n">tx_depths</span>   <span class="o">=</span> <span class="p">[</span><span class="n">_depth</span><span class="p">(</span><span class="n">data_aligned</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="n">masks</span><span class="p">[</span><span class="n">ch</span><span class="p">],</span> <span class="n">_CHANNEL_IDX</span><span class="p">[</span><span class="n">ch</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">_CHANNEL_IDX</span><span class="p">[</span><span class="n">ch</span><span class="p">][</span><span class="mi">1</span><span class="p">]])</span>
+                       <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span> <span class="k">if</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">_TRANSMISSION_CHANNELS</span><span class="p">]</span>
+
+        <span class="n">refl_floor</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">refl_depths</span><span class="p">)</span> <span class="k">if</span> <span class="n">refl_depths</span> <span class="k">else</span> <span class="n">eps</span>
+        <span class="n">tx_floor</span>   <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">tx_depths</span><span class="p">)</span>   <span class="k">if</span> <span class="n">tx_depths</span>   <span class="k">else</span> <span class="n">eps</span>
+
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span><span class="p">:</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">masks</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+            <span class="n">row</span><span class="p">,</span> <span class="n">col</span> <span class="o">=</span> <span class="n">_CHANNEL_IDX</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+            <span class="n">ch_freqs</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="o">.</span><span class="n">from_f</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">mask</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+            <span class="n">ch_data</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>  <span class="o">=</span> <span class="n">data_aligned</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="n">mask</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span><span class="p">:</span>
+            <span class="n">floor</span>        <span class="o">=</span> <span class="n">refl_floor</span> <span class="k">if</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">_REFLECTION_CHANNELS</span> <span class="k">else</span> <span class="n">tx_floor</span>
+            <span class="n">raw_scale</span>    <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">_depth</span><span class="p">(</span><span class="n">ch_data</span><span class="p">[</span><span class="n">ch</span><span class="p">]),</span> <span class="n">floor</span><span class="p">)</span>
+            <span class="n">ch_scale</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span> <span class="o">=</span> <span class="n">raw_scale</span> <span class="o">/</span> <span class="n">cfg</span><span class="o">.</span><span class="n">channel_weight</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2"> depth scale=</span><span class="si">%.4e</span><span class="s2">, N=</span><span class="si">%d</span><span class="s2">, weight=</span><span class="si">%.2f</span><span class="s2">&quot;</span><span class="p">,</span>
+                         <span class="n">ch</span><span class="p">,</span> <span class="n">ch_scale</span><span class="p">[</span><span class="n">ch</span><span class="p">],</span> <span class="n">masks</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span> <span class="n">cfg</span><span class="o">.</span><span class="n">channel_weight</span><span class="p">(</span><span class="n">ch</span><span class="p">))</span>
+
+        <span class="c1"># --- closure over aligned data ---</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_lom_s</span><span class="p">(</span><span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">,</span> <span class="n">ch</span><span class="p">,</span> <span class="n">phase_factor</span><span class="p">):</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;Compute model S-parameter for channel ch, applying phase.&quot;&quot;&quot;</span>
+            <span class="n">row</span><span class="p">,</span> <span class="n">col</span> <span class="o">=</span> <span class="n">_CHANNEL_IDX</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+            <span class="n">lom</span> <span class="o">=</span> <span class="n">lc_resonator_network_2port</span><span class="p">(</span><span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">ch_freqs</span><span class="p">[</span><span class="n">ch</span><span class="p">],</span> <span class="n">Z0</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">lom</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span> <span class="o">*</span> <span class="n">phase_factor</span>
+
+        <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">fit_phase</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">residuals</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+                <span class="n">Le</span>  <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">Ce</span>  <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">phi</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+                <span class="n">pf</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">phi</span><span class="p">)</span>
+                <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span><span class="p">:</span>
+                    <span class="n">pred</span> <span class="o">=</span> <span class="n">_lom_s</span><span class="p">(</span><span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">,</span> <span class="n">ch</span><span class="p">,</span> <span class="n">pf</span><span class="p">)</span>
+                    <span class="n">r</span>    <span class="o">=</span> <span class="n">pred</span> <span class="o">-</span> <span class="n">ch_data</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+                    <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">r</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">imag</span><span class="p">])</span> <span class="o">/</span> <span class="n">ch_scale</span><span class="p">[</span><span class="n">ch</span><span class="p">])</span>
+                <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">residuals</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+                <span class="n">Le</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">Ce</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">cfg</span><span class="o">.</span><span class="n">s_params</span><span class="p">:</span>
+                    <span class="n">pred</span> <span class="o">=</span> <span class="n">_lom_s</span><span class="p">(</span><span class="n">Le</span><span class="p">,</span> <span class="n">Ce</span><span class="p">,</span> <span class="n">ch</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+                    <span class="n">r</span>    <span class="o">=</span> <span class="n">pred</span> <span class="o">-</span> <span class="n">ch_data</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">_TRANSMISSION_CHANNELS</span><span class="p">:</span>
+                        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">ch_data</span><span class="p">[</span><span class="n">ch</span><span class="p">]))</span> <span class="o">/</span> <span class="n">ch_scale</span><span class="p">[</span><span class="n">ch</span><span class="p">])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">r</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">imag</span><span class="p">])</span> <span class="o">/</span> <span class="n">ch_scale</span><span class="p">[</span><span class="n">ch</span><span class="p">])</span>
+                <span class="c1"># for ch in cfg.s_params:</span>
+                <span class="c1">#     pred = _lom_s(Le, Ce, ch, 1.0)</span>
+                <span class="c1">#     r    = pred - ch_data[ch]</span>
+                <span class="c1">#     parts.append(np.concatenate([r.real, r.imag]) / ch_scale[ch])</span>
+                <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">residuals</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># fit()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OptimizedFit.fit">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.OptimizedFit.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+        <span class="n">data_ntw</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">d</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">cpw_params</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Two-stage optimisation to fit Leff, Ceff (and optionally phase) to</span>
+<span class="sd">        data_ntw.</span>
+
+<span class="sd">        Stage 1: coarse Nelder-Mead scan over ω0, constrained Ceff.</span>
+<span class="sd">            Uses an explicitly constructed 1-port CPW network so that the</span>
+<span class="sd">            Stage 1 data points come from a true single-port reflection</span>
+<span class="sd">            measurement rather than a 2-port S11 view.</span>
+<span class="sd">        Stage 2: windowed least_squares refinement on the channels specified</span>
+<span class="sd">            in config.s_params.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : rf.Frequency</span>
+<span class="sd">            Frequency grid for the optimisation (should be centred on the</span>
+<span class="sd">            resonance with enough bandwidth to capture the linewidth).</span>
+<span class="sd">        data_ntw : rf.Network</span>
+<span class="sd">            2-port reference network (CPW model or measured data).</span>
+<span class="sd">        Cc1, Cc2 : float</span>
+<span class="sd">            Coupling capacitances in Farads.</span>
+<span class="sd">        Ctog1, Ctog2 : float</span>
+<span class="sd">            Shunt-to-ground capacitances in Farads.</span>
+<span class="sd">        d : float</span>
+<span class="sd">            Resonator length in metres.</span>
+<span class="sd">        cpw_params : CPWParams</span>
+<span class="sd">            CPW geometry parameters.</span>
+<span class="sd">        Z0 : float</span>
+<span class="sd">            Reference impedance in Ohms.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.cpw</span><span class="w"> </span><span class="kn">import</span> <span class="n">cpw_resonator_network</span>
+
+        <span class="n">cfg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span>
+
+        <span class="c1"># --- Stage 1: explicit 1-port CPW network ---</span>
+        <span class="n">single_port_ntw</span> <span class="o">=</span> <span class="n">cpw_resonator_network</span><span class="p">(</span>
+            <span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">data_points</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_sparse_data_points</span><span class="p">(</span>
+            <span class="n">single_port_ntw</span><span class="p">,</span>
+            <span class="n">n_dense</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">n_dense</span><span class="p">,</span>
+            <span class="n">n_kappa</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">n_kappa</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">w0_guess</span> <span class="o">=</span> <span class="n">resonance_from_res11</span><span class="p">(</span><span class="n">single_port_ntw</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+
+        <span class="n">Ceff_guess</span><span class="p">,</span> <span class="n">Leff_guess</span><span class="p">,</span> <span class="n">w0_best</span><span class="p">,</span> <span class="n">scan_results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fit_Ceff_Leff</span><span class="p">(</span>
+            <span class="n">w0_guess</span><span class="o">=</span><span class="n">w0_guess</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+            <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            <span class="n">data_points</span><span class="o">=</span><span class="n">data_points</span><span class="p">,</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scan_results</span> <span class="o">=</span> <span class="n">scan_results</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Stage 1: L_guess=</span><span class="si">%.4e</span><span class="s2"> H, C_guess=</span><span class="si">%.4e</span><span class="s2"> F&quot;</span><span class="p">,</span> <span class="n">Leff_guess</span><span class="p">,</span> <span class="n">Ceff_guess</span><span class="p">)</span>
+
+        <span class="c1"># --- Stage 2: windowed least_squares ---</span>
+        <span class="n">kappa_s11</span> <span class="o">=</span> <span class="n">fwhm_from_trace_db</span><span class="p">(</span><span class="n">data_ntw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;dip&quot;</span><span class="p">)</span>
+        <span class="n">kappa_s22</span> <span class="o">=</span> <span class="n">fwhm_from_trace_db</span><span class="p">(</span><span class="n">data_ntw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;dip&quot;</span><span class="p">)</span>
+        <span class="n">f0_s11</span>    <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">data_ntw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">f0_s22</span>    <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">data_ntw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># For this LC topology the S21/S12 transmission peak is always</span>
+        <span class="c1"># co-located with the S11 reflection dip.  resonance_from_s_max</span>
+        <span class="c1"># searches the full band and can return the band edge in weakly</span>
+        <span class="c1"># coupled resonators (shallow peak), placing the window entirely</span>
+        <span class="c1"># outside freq.f and raising an empty-mask ValueError.  Using</span>
+        <span class="c1"># f0_s11 as the anchor is both correct for this topology and robust.</span>
+        <span class="n">f0_s21</span> <span class="o">=</span> <span class="n">f0_s11</span>
+        <span class="n">f0_s12</span> <span class="o">=</span> <span class="n">f0_s11</span>
+
+        <span class="n">residuals_fn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_windowed_residuals</span><span class="p">(</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+            <span class="n">data_ntw</span><span class="o">=</span><span class="n">data_ntw</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+            <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">f0_s11</span><span class="o">=</span><span class="n">f0_s11</span><span class="p">,</span>
+            <span class="n">kappa_s11</span><span class="o">=</span><span class="n">kappa_s11</span><span class="p">,</span>
+            <span class="n">f0_s22</span><span class="o">=</span><span class="n">f0_s22</span><span class="p">,</span>
+            <span class="n">kappa_s22</span><span class="o">=</span><span class="n">kappa_s22</span><span class="p">,</span>
+            <span class="n">f0_s21</span><span class="o">=</span><span class="n">f0_s21</span><span class="p">,</span>
+            <span class="n">f0_s12</span><span class="o">=</span><span class="n">f0_s12</span><span class="p">,</span>
+            <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># --- initial parameter vector and bounds ---</span>
+        <span class="c1"># Bounds are set as ±50% of the Stage-1 guess rather than fixed</span>
+        <span class="c1"># absolute offsets.  Fixed offsets (e.g. ±2e-10 H) can be too</span>
+        <span class="c1"># tight when transmission-only fitting wants to explore a different</span>
+        <span class="c1"># region of (L, C) space, causing the optimizer to hit the wall</span>
+        <span class="c1"># immediately and return the Stage-1 guess unchanged.</span>
+        <span class="n">L_lo</span><span class="p">,</span> <span class="n">L_hi</span> <span class="o">=</span> <span class="n">Leff_guess</span> <span class="o">*</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">Leff_guess</span> <span class="o">*</span> <span class="mf">1.5</span>
+        <span class="n">C_lo</span><span class="p">,</span> <span class="n">C_hi</span> <span class="o">=</span> <span class="n">Ceff_guess</span> <span class="o">*</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">Ceff_guess</span> <span class="o">*</span> <span class="mf">1.5</span>
+        <span class="n">x0</span>     <span class="o">=</span> <span class="p">[</span><span class="n">Leff_guess</span><span class="p">,</span> <span class="n">Ceff_guess</span><span class="p">]</span>
+        <span class="n">lo</span>     <span class="o">=</span> <span class="p">[</span><span class="n">L_lo</span><span class="p">,</span> <span class="n">C_lo</span><span class="p">]</span>
+        <span class="n">hi</span>     <span class="o">=</span> <span class="p">[</span><span class="n">L_hi</span><span class="p">,</span> <span class="n">C_hi</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">fit_phase</span><span class="p">:</span>
+            <span class="n">x0</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>      <span class="c1"># phi = 0 rad initial guess</span>
+            <span class="n">lo</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+            <span class="n">hi</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="n">least_squares</span><span class="p">(</span>
+            <span class="n">residuals_fn</span><span class="p">,</span>
+            <span class="n">x0</span><span class="o">=</span><span class="n">x0</span><span class="p">,</span>
+            <span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">),</span>
+            <span class="n">method</span><span class="o">=</span><span class="s2">&quot;trf&quot;</span><span class="p">,</span>
+            <span class="n">jac</span><span class="o">=</span><span class="s2">&quot;3-point&quot;</span><span class="p">,</span>
+            <span class="n">diff_step</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span>
+            <span class="n">x_scale</span><span class="o">=</span><span class="s2">&quot;jac&quot;</span><span class="p">,</span>
+            <span class="n">xtol</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span>
+            <span class="n">ftol</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span>
+            <span class="n">gtol</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span>
+            <span class="n">max_nfev</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">max_nfev</span><span class="p">,</span>
+            <span class="n">verbose</span><span class="o">=</span><span class="mi">2</span> <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">verbose</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">fit_phase</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Stage 2 result: L=</span><span class="si">%.4e</span><span class="s2"> H, C=</span><span class="si">%.4e</span><span class="s2"> F, phase=</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                     <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+                     <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">phase</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> rad&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;N/A&quot;</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># get_network()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OptimizedFit.get_network">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.OptimizedFit.get_network">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_network</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+        <span class="n">with_grounds</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">shifted</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build the 2-port LC LOM network from the optimised L and C.</span>
+
+<span class="sd">        Note: the optional fitted phase is *not* applied here because it is a</span>
+<span class="sd">        calibration correction for the *data*, not a physical property of the</span>
+<span class="sd">        LC network.  Apply it separately if you need to compare against</span>
+<span class="sd">        phase-corrected data:</span>
+<span class="sd">            net_s = net.s * np.exp(1j * model.phase)</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : rf.Frequency</span>
+<span class="sd">        Cc1, Cc2 : float</span>
+<span class="sd">            Coupling capacitances in Farads.</span>
+<span class="sd">        Z0 : float</span>
+<span class="sd">            Reference impedance in Ohms.</span>
+<span class="sd">        with_grounds : bool</span>
+<span class="sd">            If True, include Ctog1/Ctog2 shunt caps.</span>
+<span class="sd">        Ctog1, Ctog2 : float or None</span>
+<span class="sd">            Required when with_grounds=True.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        rf.Network</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fitted</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">with_grounds</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">Ctog1</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">Ctog2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Ctog1 and Ctog2 must be provided when with_grounds=True.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">(</span>
+                <span class="n">Leff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+                <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+                <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+                <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            <span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">shifted</span> <span class="o">==</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">lc_resonator_network_2port_shifted</span><span class="p">(</span>
+                <span class="n">Leff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+                <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+                <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">lc_resonator_network_2port</span><span class="p">(</span>
+                <span class="n">Leff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+                <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+                <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            
+            <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># get_params()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OptimizedFit.get_params">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.OptimizedFit.get_params">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_params</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return fitted parameters and scan diagnostics.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Keys: &quot;L&quot; (H), &quot;C&quot; (F), &quot;phase&quot; (rad or None),</span>
+<span class="sd">                  &quot;scan_results&quot; (ndarray or None).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fitted</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;L&quot;</span><span class="p">:</span>            <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+            <span class="s2">&quot;C&quot;</span><span class="p">:</span>            <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="s2">&quot;phase&quot;</span><span class="p">:</span>        <span class="bp">self</span><span class="o">.</span><span class="n">phase</span><span class="p">,</span>
+            <span class="s2">&quot;scan_results&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">scan_results</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_fitted</span><span class="p">:</span>
+            <span class="n">phase_str</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;, phase=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">phase</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> rad&quot;</span>
+                         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;OptimizedFit(L=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="si">:</span><span class="s2">.4e</span><span class="si">}</span><span class="s2"> H, C=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="si">:</span><span class="s2">.4e</span><span class="si">}</span><span class="s2"> F&quot;</span>
+                    <span class="o">+</span> <span class="n">phase_str</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;OptimizedFit(unfitted)&quot;</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../../index.html">
+              <img class="logo" src="../../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation index</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

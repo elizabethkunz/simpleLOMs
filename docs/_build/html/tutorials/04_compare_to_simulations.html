@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Tutorial 4: Comparing to EM Simulations (coming soon) &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../_static/nameko.css?v=2296cfae" />
+    <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="icon" href="../_static/logo.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Tutorial 3: CPW Parameter Sweeps with SweepConfig" href="03_cpw_parameter_sweeps.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="03_cpw_parameter_sweeps.html" title="Tutorial 3: CPW Parameter Sweeps with SweepConfig"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">simpleLOMs</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Tutorial 4: Comparing to EM Simulations (coming soon)</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="Tutorial-4:-Comparing-to-EM-Simulations-(coming-soon)">
+<h1>Tutorial 4: Comparing to EM Simulations (coming soon)<a class="headerlink" href="#Tutorial-4:-Comparing-to-EM-Simulations-(coming-soon)" title="Link to this heading">¶</a></h1>
+<p>This tutorial will show how to import Touchstone / FEM results and compare them to <code class="docutils literal notranslate"><span class="pre">simpleLOMs</span></code> circuit models.</p>
+<p>Planned topics:</p>
+<ul class="simple">
+<li><p>Loading measured or simulated <code class="docutils literal notranslate"><span class="pre">.s2p</span></code> files with <code class="docutils literal notranslate"><span class="pre">scikit-rf</span></code></p></li>
+<li><p>Aligning port definitions and reference impedance with <code class="docutils literal notranslate"><span class="pre">analyze_system</span></code> inputs</p></li>
+<li><p>Using circle-fit helpers from <code class="docutils literal notranslate"><span class="pre">simpleLOMs.analysis</span></code> on imported data</p></li>
+<li><p>Quantifying residual error with the same metrics as <code class="docutils literal notranslate"><span class="pre">analyze_system</span></code></p></li>
+</ul>
+<p>For now, use <strong>Tutorial 1</strong> for single-device fitting and <strong>Tutorial 2</strong> for accuracy mapping.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Placeholder — no executable content yet</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Tutorial 4 is under development.&quot;</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation index</a><ul>
+      <li>Previous: <a href="03_cpw_parameter_sweeps.html" title="previous chapter">Tutorial 3: CPW Parameter Sweeps with <code class="docutils literal notranslate"><span class="pre">SweepConfig</span></code></a></li>
+  </ul></li>
+</ul>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/tutorials/04_compare_to_simulations.ipynb.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

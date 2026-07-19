@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simpleLOMs"
+version = "0.1.0"
+description = "Simple lumped oscillator models for superconducting quantum device design."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+
+
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "pandas>=1.3",
+    "scikit-rf>=0.27",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=5.0",
+    "furo",
+    "sphinx-autodoc-typehints",
+    "nbsphinx",
+    "ipython",
+]
+
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+]
+notebooks = [
+    "jupyterlab",
+    "ipykernel",
+    "bokeh",
+]
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["simpleLOMs*"]
+
+[project.urls]
+Documentation = "https://elizabethkunz.github.io/simpleLOMs/"
+Repository = "https://github.com/elizabethkunz/simpleLOMs"

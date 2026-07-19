@@ -1,0 +1,44 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Tutorial 4: Comparing to EM Simulations (coming soon)\n",
+    "\n",
+    "This tutorial will show how to import Touchstone / FEM results and compare them to `simpleLOMs` circuit models.\n",
+    "\n",
+    "Planned topics:\n",
+    "- Loading measured or simulated `.s2p` files with `scikit-rf`\n",
+    "- Aligning port definitions and reference impedance with `analyze_system` inputs\n",
+    "- Using circle-fit helpers from `simpleLOMs.analysis` on imported data\n",
+    "- Quantifying residual error with the same metrics as `analyze_system`\n",
+    "\n",
+    "For now, use **Tutorial 1** for single-device fitting and **Tutorial 2** for accuracy mapping.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "# Placeholder \u2014 no executable content yet\n",
+    "print(\"Tutorial 4 is under development.\")\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "pygments_lexer": "ipython3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

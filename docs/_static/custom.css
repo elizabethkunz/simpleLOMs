@@ -1,0 +1,330 @@
+/* ==========================================================================
+   simpleLOMs — custom Furo styling
+   A minimalist, "cryogenic physics" aesthetic for superconducting-qubit docs.
+   Cool cyan (superconducting) + quantum violet accents, refined typography,
+   works in both light and dark mode.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* --- Shared design tokens ------------------------------------------------- */
+:root {
+  --slom-accent: #0e7490;          /* superconducting cyan (light)  */
+  --slom-accent-2: #7c3aed;        /* quantum violet (light)        */
+  --slom-radius: 10px;
+  --font-stack--headings: 'Inter', -apple-system, BlinkMacSystemFont,
+                          'Segoe UI', Roboto, sans-serif;
+}
+
+body[data-theme="dark"] {
+  --slom-accent: #22d3ee;          /* bright cyan on dark           */
+  --slom-accent-2: #a78bfa;        /* soft violet on dark           */
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) {
+    --slom-accent: #22d3ee;
+    --slom-accent-2: #a78bfa;
+  }
+}
+
+/* --- Typography ----------------------------------------------------------- */
+body {
+  font-feature-settings: "cv05", "ss01", "kern";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6,
+.sidebar-brand-text {
+  font-family: var(--font-stack--headings);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+h1 {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+/* Accent rule under section headings — a thin "signal trace". */
+article h2 {
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--color-background-border);
+}
+
+/* --- Brand / logo area ---------------------------------------------------- */
+.sidebar-brand {
+  padding-top: 0.5rem;
+}
+.sidebar-brand-text {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(100deg, var(--slom-accent), var(--slom-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.sidebar-logo {
+  max-width: 78px;
+  filter: drop-shadow(0 4px 14px rgba(14, 116, 144, 0.20));
+}
+body[data-theme="dark"] .sidebar-logo {
+  filter: drop-shadow(0 4px 18px rgba(34, 211, 238, 0.28));
+}
+
+/* Thin gradient hairline separating the brand from the nav. */
+.sidebar-brand + .sidebar-search-container,
+.sidebar-brand {
+  position: relative;
+}
+
+/* --- Search --------------------------------------------------------------- */
+.sidebar-search {
+  border-radius: var(--slom-radius);
+  border: 1px solid var(--color-background-border);
+  background: var(--color-background-secondary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.sidebar-search:focus-within {
+  border-color: var(--slom-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--slom-accent) 22%, transparent);
+}
+
+/* --- Navigation ----------------------------------------------------------- */
+.sidebar-tree .reference {
+  border-radius: 7px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.sidebar-tree .current-page > .reference {
+  font-weight: 600;
+  color: var(--slom-accent);
+}
+.toc-tree li.scroll-current > .reference {
+  color: var(--slom-accent);
+  font-weight: 600;
+  border-left: 2px solid var(--slom-accent);
+  padding-left: calc(1rem - 2px);
+}
+
+/* "On this page" heading in the right sidebar. */
+.toc-title {
+  font-family: var(--font-stack--headings);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--slom-accent);
+  opacity: 0.9;
+}
+
+/* Furo hides the right TOC below 82em (off-canvas until the list icon is
+   clicked). Keep it permanently visible down to the mobile breakpoint so
+   in-page navigation is always on screen for tutorials. */
+@media (min-width: 63.01em) {
+  .toc-content-icon {
+    display: none !important;
+  }
+  .toc-drawer:not(.no-toc) {
+    position: static !important;
+    right: auto !important;
+    height: auto !important;
+    border-left: none;
+  }
+  .toc-drawer:not(.no-toc) .toc-tree {
+    border-left: 1px solid var(--color-background-border);
+    font-size: var(--toc-font-size);
+  }
+  .sidebar-drawer {
+    width: 15em;
+  }
+}
+
+/* --- Links ---------------------------------------------------------------- */
+article a.reference {
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--slom-accent) 40%, transparent);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+article a.reference:hover {
+  border-bottom-color: var(--slom-accent);
+}
+
+/* --- Code ----------------------------------------------------------------- */
+code, pre, .highlight {
+  font-family: var(--font-stack--monospace);
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+.highlight {
+  border-radius: var(--slom-radius);
+  border: 1px solid var(--color-background-border);
+}
+article :not(pre) > code {
+  border-radius: 5px;
+  padding: 0.12em 0.38em;
+  font-size: 0.86em;
+  background: color-mix(in srgb, var(--slom-accent) 10%, var(--color-background-secondary));
+  border: 1px solid color-mix(in srgb, var(--slom-accent) 22%, transparent);
+  color: var(--color-api-name);
+}
+
+/* --- Landing hero (index page) -------------------------------------------- */
+article > section > img[alt=""],
+article > section > a.reference.image-reference > img {
+  display: block;
+  margin: 1.5rem auto 2rem;
+  filter: drop-shadow(0 8px 30px rgba(14, 116, 144, 0.18));
+}
+body[data-theme="dark"] article > section > img[alt=""] {
+  filter: drop-shadow(0 8px 34px rgba(34, 211, 238, 0.22));
+}
+
+/* First paragraph after the H1 reads as a lede. */
+article > section > h1 + p {
+  font-size: 1.12rem;
+  line-height: 1.65;
+  color: var(--color-foreground-muted);
+}
+article > section > h1 + p strong {
+  color: var(--color-foreground-primary);
+}
+
+/* --- Landing page --------------------------------------------------------- */
+.hero-logo {
+  margin: 1rem auto 0.5rem;
+  filter: drop-shadow(0 6px 22px rgba(14, 116, 144, 0.20));
+}
+body[data-theme="dark"] .hero-logo {
+  filter: drop-shadow(0 6px 26px rgba(34, 211, 238, 0.26));
+}
+
+/* The one-line value proposition under the H1. */
+p.lead {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  font-weight: 400;
+  color: var(--color-foreground-muted);
+  margin-top: 0.5rem;
+  margin-bottom: 1.8rem;
+}
+p.lead strong {
+  color: var(--color-foreground-primary);
+  font-weight: 650;
+}
+
+/* Landing-page figures: matte every figure on a clean rounded card so the
+   white-canvas plots and schematics read as intentional in both themes.
+   Sphinx applies :class: to the <img>/<a>, not the wrapping <figure>. */
+figure:has(img.landing-figure) {
+  margin: 2rem auto;
+  text-align: center;
+}
+img.landing-figure {
+  background: #ffffff;
+  padding: 12px;
+  border-radius: var(--slom-radius);
+  border: 1px solid var(--color-background-border);
+  box-shadow: 0 8px 30px rgba(2, 12, 27, 0.10);
+}
+body[data-theme="dark"] img.landing-figure {
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+figure:has(img.landing-figure) > figcaption,
+figure:has(img.landing-figure) .caption,
+figure:has(img.landing-figure) > p.caption {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-foreground-muted);
+  max-width: 42rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* --- Admonitions ---------------------------------------------------------- */
+.admonition, div.admonition {
+  border-radius: var(--slom-radius);
+  border: 1px solid var(--color-background-border);
+  border-left: 3px solid var(--slom-accent);
+  box-shadow: none;
+}
+.admonition > .admonition-title {
+  font-family: var(--font-stack--headings);
+  font-weight: 600;
+}
+
+/* --- Tables --------------------------------------------------------------- */
+table.docutils {
+  border-radius: var(--slom-radius);
+  overflow: hidden;
+  border: 1px solid var(--color-background-border);
+}
+table.docutils th {
+  background: var(--color-background-secondary);
+  font-family: var(--font-stack--headings);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* --- API signatures ------------------------------------------------------- */
+dl.py dt.sig {
+  border-radius: var(--slom-radius);
+  border: 1px solid var(--color-background-border);
+  border-left: 3px solid var(--slom-accent-2);
+  background: var(--color-background-secondary);
+}
+
+/* --- Notebook (nbsphinx) output ------------------------------------------- */
+/* Matplotlib figures render with a white canvas. Matte them on a clean rounded
+   card so they read as intentional in both themes (essential in dark mode). */
+.nboutput .output_area img,
+.nboutput .output_area .rendered_html img,
+figure img.plot,
+.nbinput + .nboutput img {
+  background: #ffffff;
+  padding: 12px !important;
+  border-radius: var(--slom-radius);
+  border: 1px solid var(--color-background-border);
+}
+body[data-theme="dark"] .nboutput .output_area img {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Notebook input prompts (In [n]:) tinted with the brand accent. */
+.nbinput .prompt,
+.nboutput .prompt {
+  color: var(--slom-accent);
+  font-family: var(--font-stack--monospace);
+  opacity: 0.8;
+}
+
+/* Plain-text stream output shouldn't get the code chip background. */
+.nboutput .output_area pre {
+  border: none;
+  background: transparent;
+}
+
+/* --- Header / top bar ----------------------------------------------------- */
+.mobile-header {
+  backdrop-filter: saturate(160%) blur(8px);
+  background: color-mix(in srgb, var(--color-background-primary) 82%, transparent);
+}
+
+/* Subtle top accent line across the content column. */
+.content {
+  position: relative;
+}
+
+/* --- Theme toggle: give it a little glow on hover ------------------------- */
+.theme-toggle:hover svg {
+  color: var(--slom-accent);
+}
+
+/* --- Footer --------------------------------------------------------------- */
+.bottom-of-page {
+  border-top: 1px solid var(--color-background-border);
+}
+.footer-icons .muted-link:hover svg {
+  color: var(--slom-accent);
+}

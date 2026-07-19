@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.load_sweeps &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../_static/nameko.css?v=2296cfae" />
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.load_sweeps</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.load_sweeps</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">load_sweeps.py</span>
+<span class="sd">--------------</span>
+<span class="sd">Batch evaluation over load-frequency grids, reusing a single model prefit.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">as_completed</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.analysis</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">circle_fit_f0_kappa</span><span class="p">,</span>
+    <span class="n">circle_fit_modes</span><span class="p">,</span>
+    <span class="n">resonance_from_s_max</span><span class="p">,</span>
+    <span class="n">resonances_from_s_max</span><span class="p">,</span>
+    <span class="n">stitch_shifted_freqs</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.analytical_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticalFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.foster_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">FosterFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.optimized_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">OptimizationConfig</span><span class="p">,</span> <span class="n">OptimizedFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.cpw</span><span class="w"> </span><span class="kn">import</span> <span class="n">cpw_resonator_loaded_network_2port</span><span class="p">,</span> <span class="n">cpw_resonator_network_2port</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.lc</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">lc_load_dressed_network_2</span><span class="p">,</span>
+    <span class="n">lc_resonator_loaded_network_2port</span><span class="p">,</span>
+    <span class="n">lc_resonator_loaded_network_2port_shifted</span><span class="p">,</span>
+    <span class="n">lc_resonator_loaded_network_with_grounds_2port</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPWParams</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.system</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DEFAULT_FREQ_LOADED</span><span class="p">,</span>
+    <span class="n">_metrics</span><span class="p">,</span>
+    <span class="n">_ref_freqs_cf</span><span class="p">,</span>
+    <span class="n">_s_residual_sum</span><span class="p">,</span>
+    <span class="n">_shifted_freqs_cf</span><span class="p">,</span>
+    <span class="n">_shift_errors</span><span class="p">,</span>
+    <span class="n">_to_jsonable</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PrefitContext</span><span class="p">:</span>
+    <span class="n">refined_freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span>
+    <span class="n">cpw_network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span>
+    <span class="n">optimized_model</span><span class="p">:</span> <span class="n">OptimizedFit</span>
+    <span class="n">foster_model</span><span class="p">:</span> <span class="n">FosterFit</span>
+    <span class="n">analytical_model</span><span class="p">:</span> <span class="n">AnalyticalFit</span>
+    <span class="n">f0_cpw_s11</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">f0_cpw_s22</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">f0_cpw_s12</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">m_opt</span><span class="p">:</span> <span class="nb">dict</span>
+    <span class="n">m_foster</span><span class="p">:</span> <span class="nb">dict</span>
+    <span class="n">m_analytical</span><span class="p">:</span> <span class="nb">dict</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_safe_resonances_from_s_max</span><span class="p">(</span>
+    <span class="n">network</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">n_modes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Best-effort S-peak extraction; returns NaNs instead of raising.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">resonances_from_s_max</span><span class="p">(</span><span class="n">network</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_modes</span><span class="p">:</span>
+            <span class="n">vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">vals</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n_modes</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)])</span>
+        <span class="k">return</span> <span class="n">vals</span><span class="p">[:</span><span class="n">n_modes</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n_modes</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">load_from_freq</span><span class="p">(</span><span class="n">f_ghz</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">C</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">6e-13</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">f_hz</span> <span class="o">=</span> <span class="n">f_ghz</span> <span class="o">*</span> <span class="mf">1e9</span>
+    <span class="n">L</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">((</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f_hz</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">C</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fit_models_once</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="p">:</span> <span class="n">CPWParams</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+    <span class="n">analytical_Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">opt_config</span><span class="p">:</span> <span class="n">OptimizationConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">shifted</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PrefitContext</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">cpw_params</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">cpw_params</span> <span class="o">=</span> <span class="n">CPWParams</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">opt_config</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">opt_config</span> <span class="o">=</span> <span class="n">OptimizationConfig</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">n_widths</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+
+    <span class="n">cpw_coarse</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+        <span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span> <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+    <span class="n">f0_coarse</span><span class="p">,</span> <span class="n">kappa_coarse</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw_coarse</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">Cc1</span> <span class="o">==</span> <span class="n">Cc2</span><span class="p">:</span>
+        <span class="n">refined_freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="n">f0_coarse</span> <span class="o">-</span> <span class="mf">0.5e9</span><span class="p">,</span> <span class="n">f0_coarse</span> <span class="o">+</span> <span class="mf">0.5e9</span><span class="p">,</span> <span class="mi">500_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">refined_freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span>
+            <span class="n">f0_coarse</span> <span class="o">-</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">kappa_coarse</span><span class="p">,</span>
+            <span class="n">f0_coarse</span> <span class="o">+</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">kappa_coarse</span><span class="p">,</span>
+            <span class="mi">200_001</span><span class="p">,</span>
+            <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">cpw_network</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+        <span class="n">refined_freq</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span> <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+    <span class="n">f0_cpw_s11</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">f0_cpw_s22</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">f0_cpw_s12</span> <span class="o">=</span> <span class="n">resonance_from_s_max</span><span class="p">(</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">f0_cpw_s12</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+    <span class="n">foster_model</span> <span class="o">=</span> <span class="n">FosterFit</span><span class="p">(</span><span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">)</span>
+    <span class="n">foster_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">)</span>
+    <span class="n">foster_network</span> <span class="o">=</span> <span class="n">foster_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+
+    <span class="n">optimized_model</span> <span class="o">=</span> <span class="n">OptimizedFit</span><span class="p">(</span><span class="n">config</span><span class="o">=</span><span class="n">opt_config</span><span class="p">)</span>
+    <span class="n">optimized_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+        <span class="n">refined_freq</span><span class="p">,</span>
+        <span class="n">data_ntw</span><span class="o">=</span><span class="n">cpw_network</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span>
+        <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">optimized_network</span> <span class="o">=</span> <span class="n">optimized_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">refined_freq</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="n">shifted</span><span class="o">=</span><span class="n">shifted</span><span class="p">,</span>
+    <span class="p">)</span> <span class="k">if</span> <span class="n">shifted</span> <span class="k">else</span> <span class="n">optimized_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">analytical_model</span> <span class="o">=</span> <span class="n">AnalyticalFit</span><span class="p">()</span>
+    <span class="n">analytical_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">f_r</span><span class="o">=</span><span class="mf">8.58e9</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="p">(</span><span class="n">analytical_Z0</span> <span class="ow">or</span> <span class="n">Z0</span><span class="p">))</span>
+    <span class="n">analytical_network</span> <span class="o">=</span> <span class="n">analytical_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">PrefitContext</span><span class="p">(</span>
+        <span class="n">refined_freq</span><span class="o">=</span><span class="n">refined_freq</span><span class="p">,</span>
+        <span class="n">cpw_network</span><span class="o">=</span><span class="n">cpw_network</span><span class="p">,</span>
+        <span class="n">optimized_model</span><span class="o">=</span><span class="n">optimized_model</span><span class="p">,</span>
+        <span class="n">foster_model</span><span class="o">=</span><span class="n">foster_model</span><span class="p">,</span>
+        <span class="n">analytical_model</span><span class="o">=</span><span class="n">analytical_model</span><span class="p">,</span>
+        <span class="n">f0_cpw_s11</span><span class="o">=</span><span class="n">f0_cpw_s11</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span>
+        <span class="n">f0_cpw_s22</span><span class="o">=</span><span class="n">f0_cpw_s22</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span>
+        <span class="n">f0_cpw_s12</span><span class="o">=</span><span class="n">f0_cpw_s12</span><span class="p">,</span>
+        <span class="n">m_opt</span><span class="o">=</span><span class="n">_metrics</span><span class="p">(</span><span class="n">optimized_network</span><span class="p">),</span>
+        <span class="n">m_foster</span><span class="o">=</span><span class="n">_metrics</span><span class="p">(</span><span class="n">foster_network</span><span class="p">),</span>
+        <span class="n">m_analytical</span><span class="o">=</span><span class="n">_metrics</span><span class="p">(</span><span class="n">analytical_network</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_combo_result</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">freq_loaded</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">prefit</span><span class="p">:</span> <span class="n">PrefitContext</span><span class="p">,</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="p">:</span> <span class="n">CPWParams</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">target_f1_ghz</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">target_f2_ghz</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">shifted</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="n">net1</span> <span class="o">=</span> <span class="n">lc_load_dressed_network_2</span><span class="p">(</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span><span class="p">,</span> <span class="mf">1e-15</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">net2</span> <span class="o">=</span> <span class="n">lc_load_dressed_network_2</span><span class="p">(</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span><span class="p">,</span> <span class="mf">1e-15</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">f0_1_cf</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">circle_fit_modes</span><span class="p">(</span><span class="n">net1</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_modes</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">f0_2_cf</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">circle_fit_modes</span><span class="p">(</span><span class="n">net2</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_modes</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">f0_load1_ghz</span> <span class="o">=</span> <span class="n">target_f1_ghz</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">target_f1_ghz</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">f0_1_cf</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">)</span>
+    <span class="n">f0_load2_ghz</span> <span class="o">=</span> <span class="n">target_f2_ghz</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">target_f2_ghz</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">f0_2_cf</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">)</span>
+
+    <span class="n">load_kw</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">Lload1</span><span class="o">=</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">Cload1</span><span class="p">,</span> <span class="n">Lload2</span><span class="o">=</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">Cload2</span><span class="p">)</span>
+    <span class="n">cpw_loaded</span> <span class="o">=</span> <span class="n">cpw_resonator_loaded_network_2port</span><span class="p">(</span>
+        <span class="n">freq_loaded</span><span class="p">,</span>
+        <span class="n">d</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">load_kw</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">shifted</span><span class="p">:</span>
+        <span class="n">opt_loaded</span> <span class="o">=</span> <span class="n">lc_resonator_loaded_network_2port_shifted</span><span class="p">(</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freq_loaded</span><span class="p">,</span>
+            <span class="n">Leff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+            <span class="n">Ceff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+            <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">load_kw</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">opt_loaded</span> <span class="o">=</span> <span class="n">lc_resonator_loaded_network_2port</span><span class="p">(</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freq_loaded</span><span class="p">,</span>
+            <span class="n">Leff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+            <span class="n">Ceff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+            <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">load_kw</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">foster_loaded</span> <span class="o">=</span> <span class="n">lc_resonator_loaded_network_with_grounds_2port</span><span class="p">(</span>
+        <span class="n">freq</span><span class="o">=</span><span class="n">freq_loaded</span><span class="p">,</span>
+        <span class="n">Leff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">foster_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+        <span class="n">Ceff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">foster_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">load_kw</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">analytical_loaded</span> <span class="o">=</span> <span class="n">lc_resonator_loaded_network_with_grounds_2port</span><span class="p">(</span>
+        <span class="n">freq</span><span class="o">=</span><span class="n">freq_loaded</span><span class="p">,</span>
+        <span class="n">Leff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">analytical_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+        <span class="n">Ceff</span><span class="o">=</span><span class="n">prefit</span><span class="o">.</span><span class="n">analytical_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">load_kw</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">cpw_sf_cf</span><span class="p">,</span> <span class="n">cpw_src</span> <span class="o">=</span> <span class="n">_shifted_freqs_cf</span><span class="p">(</span><span class="n">cpw_loaded</span><span class="p">)</span>
+    <span class="n">opt_sf_cf</span><span class="p">,</span> <span class="n">opt_src</span> <span class="o">=</span> <span class="n">_shifted_freqs_cf</span><span class="p">(</span><span class="n">opt_loaded</span><span class="p">)</span>
+    <span class="n">fos_sf_cf</span><span class="p">,</span> <span class="n">fos_src</span> <span class="o">=</span> <span class="n">_shifted_freqs_cf</span><span class="p">(</span><span class="n">foster_loaded</span><span class="p">)</span>
+    <span class="n">ana_sf_cf</span><span class="p">,</span> <span class="n">ana_src</span> <span class="o">=</span> <span class="n">_shifted_freqs_cf</span><span class="p">(</span><span class="n">analytical_loaded</span><span class="p">)</span>
+
+    <span class="n">cpw_ref_cf</span> <span class="o">=</span> <span class="n">_ref_freqs_cf</span><span class="p">(</span><span class="n">cpw_src</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s11</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s22</span><span class="p">,</span> <span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">f0_load2_ghz</span><span class="p">)</span>
+    <span class="n">opt_ref_cf</span> <span class="o">=</span> <span class="n">_ref_freqs_cf</span><span class="p">(</span><span class="n">opt_src</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">],</span> <span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">f0_load2_ghz</span><span class="p">)</span>
+    <span class="n">fos_ref_cf</span> <span class="o">=</span> <span class="n">_ref_freqs_cf</span><span class="p">(</span><span class="n">fos_src</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">],</span> <span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">f0_load2_ghz</span><span class="p">)</span>
+    <span class="n">ana_ref_cf</span> <span class="o">=</span> <span class="n">_ref_freqs_cf</span><span class="p">(</span><span class="n">ana_src</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">],</span> <span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">f0_load2_ghz</span><span class="p">)</span>
+
+    <span class="n">cpw_shifts_cf</span> <span class="o">=</span> <span class="n">cpw_ref_cf</span> <span class="o">-</span> <span class="n">cpw_sf_cf</span>
+    <span class="n">opt_shifts_cf</span> <span class="o">=</span> <span class="n">opt_ref_cf</span> <span class="o">-</span> <span class="n">opt_sf_cf</span>
+    <span class="n">fos_shifts_cf</span> <span class="o">=</span> <span class="n">fos_ref_cf</span> <span class="o">-</span> <span class="n">fos_sf_cf</span>
+    <span class="n">ana_shifts_cf</span> <span class="o">=</span> <span class="n">ana_ref_cf</span> <span class="o">-</span> <span class="n">ana_sf_cf</span>
+
+    <span class="n">cpw_sf_s12</span> <span class="o">=</span> <span class="n">_safe_resonances_from_s_max</span><span class="p">(</span><span class="n">cpw_loaded</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_modes</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">opt_sf_s12</span> <span class="o">=</span> <span class="n">_safe_resonances_from_s_max</span><span class="p">(</span><span class="n">opt_loaded</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_modes</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">fos_sf_s12</span> <span class="o">=</span> <span class="n">_safe_resonances_from_s_max</span><span class="p">(</span><span class="n">foster_loaded</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_modes</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">ana_sf_s12</span> <span class="o">=</span> <span class="n">_safe_resonances_from_s_max</span><span class="p">(</span><span class="n">analytical_loaded</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_modes</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+    <span class="n">cpw_ref_s12</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">([</span><span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s12</span><span class="p">,</span> <span class="n">f0_load2_ghz</span><span class="p">])</span>
+    <span class="n">opt_ref_s12</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">([</span><span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s12&quot;</span><span class="p">],</span> <span class="n">f0_load2_ghz</span><span class="p">])</span>
+    <span class="n">fos_ref_s12</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">([</span><span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s12&quot;</span><span class="p">],</span> <span class="n">f0_load2_ghz</span><span class="p">])</span>
+    <span class="n">ana_ref_s12</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">([</span><span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s12&quot;</span><span class="p">],</span> <span class="n">f0_load2_ghz</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;_load_combo&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;f_load1_ghz&quot;</span><span class="p">:</span> <span class="n">f0_load1_ghz</span><span class="p">,</span> <span class="s2">&quot;f_load2_ghz&quot;</span><span class="p">:</span> <span class="n">f0_load2_ghz</span><span class="p">},</span>
+        <span class="s2">&quot;Lload1&quot;</span><span class="p">:</span> <span class="n">Lload1</span><span class="p">,</span>
+        <span class="s2">&quot;Cload1&quot;</span><span class="p">:</span> <span class="n">Cload1</span><span class="p">,</span>
+        <span class="s2">&quot;Lload2&quot;</span><span class="p">:</span> <span class="n">Lload2</span><span class="p">,</span>
+        <span class="s2">&quot;Cload2&quot;</span><span class="p">:</span> <span class="n">Cload2</span><span class="p">,</span>
+        <span class="s2">&quot;cpw_shifted_freqs_cf&quot;</span><span class="p">:</span> <span class="n">cpw_sf_cf</span><span class="p">,</span>
+        <span class="s2">&quot;cpw_all_shifts_cf&quot;</span><span class="p">:</span> <span class="n">cpw_shifts_cf</span><span class="p">,</span>
+        <span class="s2">&quot;opt_shifted_freqs_cf&quot;</span><span class="p">:</span> <span class="n">opt_sf_cf</span><span class="p">,</span>
+        <span class="s2">&quot;opt_all_shifts_cf&quot;</span><span class="p">:</span> <span class="n">opt_shifts_cf</span><span class="p">,</span>
+        <span class="s2">&quot;opt_shift_errors_cf&quot;</span><span class="p">:</span> <span class="n">_shift_errors</span><span class="p">(</span><span class="n">cpw_shifts_cf</span><span class="p">,</span> <span class="n">opt_shifts_cf</span><span class="p">),</span>
+        <span class="s2">&quot;foster_shifted_freqs_cf&quot;</span><span class="p">:</span> <span class="n">fos_sf_cf</span><span class="p">,</span>
+        <span class="s2">&quot;foster_all_shifts_cf&quot;</span><span class="p">:</span> <span class="n">fos_shifts_cf</span><span class="p">,</span>
+        <span class="s2">&quot;foster_shift_errors_cf&quot;</span><span class="p">:</span> <span class="n">_shift_errors</span><span class="p">(</span><span class="n">cpw_shifts_cf</span><span class="p">,</span> <span class="n">fos_shifts_cf</span><span class="p">),</span>
+        <span class="s2">&quot;analytical_shifted_freqs_cf&quot;</span><span class="p">:</span> <span class="n">ana_sf_cf</span><span class="p">,</span>
+        <span class="s2">&quot;analytical_all_shifts_cf&quot;</span><span class="p">:</span> <span class="n">ana_shifts_cf</span><span class="p">,</span>
+        <span class="s2">&quot;analytical_shift_errors_cf&quot;</span><span class="p">:</span> <span class="n">_shift_errors</span><span class="p">(</span><span class="n">cpw_shifts_cf</span><span class="p">,</span> <span class="n">ana_shifts_cf</span><span class="p">),</span>
+        <span class="s2">&quot;cpw_shifted_freqs_s12&quot;</span><span class="p">:</span> <span class="n">cpw_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;cpw_all_shifts_s12&quot;</span><span class="p">:</span> <span class="n">cpw_ref_s12</span> <span class="o">-</span> <span class="n">cpw_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;opt_shifted_freqs_s12&quot;</span><span class="p">:</span> <span class="n">opt_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;opt_all_shifts_s12&quot;</span><span class="p">:</span> <span class="n">opt_ref_s12</span> <span class="o">-</span> <span class="n">opt_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;opt_shift_errors_s12&quot;</span><span class="p">:</span> <span class="n">_shift_errors</span><span class="p">(</span><span class="n">cpw_ref_s12</span> <span class="o">-</span> <span class="n">cpw_sf_s12</span><span class="p">,</span> <span class="n">opt_ref_s12</span> <span class="o">-</span> <span class="n">opt_sf_s12</span><span class="p">),</span>
+        <span class="s2">&quot;foster_shifted_freqs_s12&quot;</span><span class="p">:</span> <span class="n">fos_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;foster_all_shifts_s12&quot;</span><span class="p">:</span> <span class="n">fos_ref_s12</span> <span class="o">-</span> <span class="n">fos_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;foster_shift_errors_s12&quot;</span><span class="p">:</span> <span class="n">_shift_errors</span><span class="p">(</span><span class="n">cpw_ref_s12</span> <span class="o">-</span> <span class="n">cpw_sf_s12</span><span class="p">,</span> <span class="n">fos_ref_s12</span> <span class="o">-</span> <span class="n">fos_sf_s12</span><span class="p">),</span>
+        <span class="s2">&quot;analytical_shifted_freqs_s12&quot;</span><span class="p">:</span> <span class="n">ana_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;analytical_all_shifts_s12&quot;</span><span class="p">:</span> <span class="n">ana_ref_s12</span> <span class="o">-</span> <span class="n">ana_sf_s12</span><span class="p">,</span>
+        <span class="s2">&quot;analytical_shift_errors_s12&quot;</span><span class="p">:</span> <span class="n">_shift_errors</span><span class="p">(</span><span class="n">cpw_ref_s12</span> <span class="o">-</span> <span class="n">cpw_sf_s12</span><span class="p">,</span> <span class="n">ana_ref_s12</span> <span class="o">-</span> <span class="n">ana_sf_s12</span><span class="p">),</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">evaluate_load_grid</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">prefit</span><span class="p">:</span> <span class="n">PrefitContext</span><span class="p">,</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">load1_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">load2_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">Cload1_fixed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">6e-13</span><span class="p">,</span>
+    <span class="n">Cload2_fixed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">6e-13</span><span class="p">,</span>
+    <span class="n">freq_loaded</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="p">:</span> <span class="n">CPWParams</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+    <span class="n">shifted</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">cpw_params</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">cpw_params</span> <span class="o">=</span> <span class="n">CPWParams</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">freq_loaded</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">freq_loaded</span> <span class="o">=</span> <span class="n">DEFAULT_FREQ_LOADED</span>
+
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">f1_hz</span><span class="p">,</span> <span class="n">f2_hz</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">load1_freqs_hz</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">load2_freqs_hz</span><span class="p">)):</span>
+        <span class="n">f1_ghz</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">f1_hz</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>
+        <span class="n">f2_ghz</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">f2_hz</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>
+        <span class="n">L1</span><span class="p">,</span> <span class="n">C1</span> <span class="o">=</span> <span class="n">load_from_freq</span><span class="p">(</span><span class="n">f1_ghz</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload1_fixed</span><span class="p">)</span>
+        <span class="n">L2</span><span class="p">,</span> <span class="n">C2</span> <span class="o">=</span> <span class="n">load_from_freq</span><span class="p">(</span><span class="n">f2_ghz</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload2_fixed</span><span class="p">)</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">_compute_combo_result</span><span class="p">(</span>
+                <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+                <span class="n">freq_loaded</span><span class="o">=</span><span class="n">freq_loaded</span><span class="p">,</span>
+                <span class="n">prefit</span><span class="o">=</span><span class="n">prefit</span><span class="p">,</span>
+                <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span>
+                <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+                <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+                <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+                <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+                <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
+                <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+                <span class="n">Lload1</span><span class="o">=</span><span class="n">L1</span><span class="p">,</span>
+                <span class="n">Cload1</span><span class="o">=</span><span class="n">C1</span><span class="p">,</span>
+                <span class="n">Lload2</span><span class="o">=</span><span class="n">L2</span><span class="p">,</span>
+                <span class="n">Cload2</span><span class="o">=</span><span class="n">C2</span><span class="p">,</span>
+                <span class="n">target_f1_ghz</span><span class="o">=</span><span class="n">f1_ghz</span><span class="p">,</span>
+                <span class="n">target_f2_ghz</span><span class="o">=</span><span class="n">f2_ghz</span><span class="p">,</span>
+                <span class="n">shifted</span><span class="o">=</span><span class="n">shifted</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">results</span>
+
+
+<div class="viewcode-block" id="analyze_system_load_grid">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.analyze_system_load_grid">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">analyze_system_load_grid</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">load1_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">load2_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="p">:</span> <span class="n">CPWParams</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+    <span class="n">analytical_Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">opt_config</span><span class="p">:</span> <span class="n">OptimizationConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">shifted</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">Cload1_fixed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">6e-13</span><span class="p">,</span>
+    <span class="n">Cload2_fixed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">6e-13</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="n">prefit</span> <span class="o">=</span> <span class="n">fit_models_once</span><span class="p">(</span>
+        <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+        <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="n">analytical_Z0</span><span class="o">=</span><span class="n">analytical_Z0</span><span class="p">,</span>
+        <span class="n">opt_config</span><span class="o">=</span><span class="n">opt_config</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+        <span class="n">shifted</span><span class="o">=</span><span class="n">shifted</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">load_sweep_results</span> <span class="o">=</span> <span class="n">evaluate_load_grid</span><span class="p">(</span>
+        <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+        <span class="n">prefit</span><span class="o">=</span><span class="n">prefit</span><span class="p">,</span>
+        <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">load1_freqs_hz</span><span class="o">=</span><span class="n">load1_freqs_hz</span><span class="p">,</span>
+        <span class="n">load2_freqs_hz</span><span class="o">=</span><span class="n">load2_freqs_hz</span><span class="p">,</span>
+        <span class="n">Cload1_fixed</span><span class="o">=</span><span class="n">Cload1_fixed</span><span class="p">,</span>
+        <span class="n">Cload2_fixed</span><span class="o">=</span><span class="n">Cload2_fixed</span><span class="p">,</span>
+        <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="n">shifted</span><span class="o">=</span><span class="n">shifted</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pct_err</span><span class="p">(</span><span class="n">ref</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">val</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">ref</span> <span class="o">-</span> <span class="n">val</span><span class="p">)</span> <span class="o">/</span> <span class="n">ref</span> <span class="o">*</span> <span class="mi">100</span> <span class="k">if</span> <span class="n">ref</span> <span class="o">!=</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+    <span class="n">foster_network</span> <span class="o">=</span> <span class="n">prefit</span><span class="o">.</span><span class="n">foster_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">prefit</span><span class="o">.</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+    <span class="n">optimized_network</span> <span class="o">=</span> <span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">prefit</span><span class="o">.</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span> <span class="n">shifted</span><span class="o">=</span><span class="n">shifted</span>
+    <span class="p">)</span> <span class="k">if</span> <span class="n">shifted</span> <span class="k">else</span> <span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">prefit</span><span class="o">.</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+    <span class="n">analytical_network</span> <span class="o">=</span> <span class="n">prefit</span><span class="o">.</span><span class="n">analytical_model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+        <span class="n">prefit</span><span class="o">.</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span>
+    <span class="p">)</span>
+    <span class="n">cpw_metrics</span> <span class="o">=</span> <span class="n">_metrics</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_s_residual_integral</span><span class="p">(</span><span class="n">net_a</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span> <span class="n">net_b</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="n">freqs</span> <span class="o">=</span> <span class="n">net_a</span><span class="o">.</span><span class="n">f</span>
+        <span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">net_a</span><span class="o">.</span><span class="n">s</span> <span class="o">-</span> <span class="n">net_b</span><span class="o">.</span><span class="n">s</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">trapz</span><span class="p">(</span><span class="n">diff</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)),</span> <span class="n">freqs</span><span class="p">))</span>
+
+    <span class="n">foster_s_residuals</span> <span class="o">=</span> <span class="n">_s_residual_sum</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">foster_network</span><span class="p">)</span>
+    <span class="n">opt_s_residuals</span> <span class="o">=</span> <span class="n">_s_residual_sum</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">optimized_network</span><span class="p">)</span>
+    <span class="n">analytical_s_residuals</span> <span class="o">=</span> <span class="n">_s_residual_sum</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">analytical_network</span><span class="p">)</span>
+    <span class="n">foster_s_residuals_integral</span> <span class="o">=</span> <span class="n">_s_residual_integral</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">foster_network</span><span class="p">)</span>
+    <span class="n">opt_s_residuals_integral</span> <span class="o">=</span> <span class="n">_s_residual_integral</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">optimized_network</span><span class="p">)</span>
+    <span class="n">analytical_s_residuals_integral</span> <span class="o">=</span> <span class="n">_s_residual_integral</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">cpw_network</span><span class="p">,</span> <span class="n">analytical_network</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;Z0 (Ohms)&quot;</span><span class="p">:</span> <span class="n">Z0</span><span class="p">,</span>
+        <span class="s2">&quot;Cc1 (F)&quot;</span><span class="p">:</span> <span class="n">Cc1</span><span class="p">,</span>
+        <span class="s2">&quot;Cc2 (F)&quot;</span><span class="p">:</span> <span class="n">Cc2</span><span class="p">,</span>
+        <span class="s2">&quot;Ctog1 (F)&quot;</span><span class="p">:</span> <span class="n">Ctog1</span><span class="p">,</span>
+        <span class="s2">&quot;Ctog2 (F)&quot;</span><span class="p">:</span> <span class="n">Ctog2</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized L (H)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized C (F)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">optimized_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+        <span class="s2">&quot;Foster L (H)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">foster_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+        <span class="s2">&quot;Foster C (F)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">foster_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical L (H)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">analytical_model</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical C (F)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">analytical_model</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+        <span class="s2">&quot;CPW f0 S11 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s11</span><span class="p">,</span>
+        <span class="s2">&quot;CPW f0 S22 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s22</span><span class="p">,</span>
+        <span class="s2">&quot;CPW kappa S11 (MHz)&quot;</span><span class="p">:</span> <span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;CPW kappa S22 (MHz)&quot;</span><span class="p">:</span> <span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized f0 S11 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Optimized kappa S11 (MHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Foster f0 S11 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Foster kappa S11 (MHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical f0 S11 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Analytical kappa S11 (MHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized f0 S22 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Optimized kappa S22 (MHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Foster f0 S22 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Foster kappa S22 (MHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical f0 S22 (GHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Analytical kappa S22 (MHz)&quot;</span><span class="p">:</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized f0 error S11 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s11</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Foster f0 error S11 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s11</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Analytical f0 error S11 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s11</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Optimized f0 error S22 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s22</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Foster f0 error S22 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s22</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Analytical f0 error S22 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">prefit</span><span class="o">.</span><span class="n">f0_cpw_s22</span><span class="p">,</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;f0_s22&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Optimized kappa error S11 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Foster kappa error S11 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Analytical kappa error S11 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;k_s11&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Optimized kappa error S22 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_opt</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Foster kappa error S22 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_foster</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Analytical kappa error S22 (%)&quot;</span><span class="p">:</span> <span class="n">_pct_err</span><span class="p">(</span><span class="n">cpw_metrics</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">],</span> <span class="n">prefit</span><span class="o">.</span><span class="n">m_analytical</span><span class="p">[</span><span class="s2">&quot;k_s22&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;Foster S residuals&quot;</span><span class="p">:</span> <span class="n">foster_s_residuals</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized S residuals&quot;</span><span class="p">:</span> <span class="n">opt_s_residuals</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical S residuals&quot;</span><span class="p">:</span> <span class="n">analytical_s_residuals</span><span class="p">,</span>
+        <span class="s2">&quot;Foster S residuals (integrated)&quot;</span><span class="p">:</span> <span class="n">foster_s_residuals_integral</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized S residuals (integrated)&quot;</span><span class="p">:</span> <span class="n">opt_s_residuals_integral</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical S residuals (integrated)&quot;</span><span class="p">:</span> <span class="n">analytical_s_residuals_integral</span><span class="p">,</span>
+        <span class="s2">&quot;load_sweep_results&quot;</span><span class="p">:</span> <span class="n">load_sweep_results</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="run_accuracy_sweep_load_grid">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.run_accuracy_sweep_load_grid">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_accuracy_sweep_load_grid</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">sweep_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">fixed_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">load1_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">load2_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">save_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">skip_errors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">n_jobs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+    <span class="n">param_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sweep_params</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+    <span class="n">param_values</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">sweep_params</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+    <span class="n">grid_points</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="n">param_values</span><span class="p">))</span>
+
+    <span class="n">flat_results</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">json_file</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">first_entry</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">save_path</span> <span class="ow">and</span> <span class="n">save_path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.json&quot;</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">save_path</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">save_path</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">json_file</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;[</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">combos</span> <span class="o">=</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">param_names</span><span class="p">,</span> <span class="n">point</span><span class="p">))</span> <span class="k">for</span> <span class="n">point</span> <span class="ow">in</span> <span class="n">grid_points</span><span class="p">]</span>
+    <span class="n">t_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_combo</span><span class="p">(</span><span class="n">combo</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+        <span class="n">call_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">fixed_params</span><span class="p">,</span> <span class="o">**</span><span class="n">combo</span><span class="p">}</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">analyze_system_load_grid</span><span class="p">(</span>
+            <span class="o">**</span><span class="n">call_kwargs</span><span class="p">,</span>
+            <span class="n">load1_freqs_hz</span><span class="o">=</span><span class="n">load1_freqs_hz</span><span class="p">,</span>
+            <span class="n">load2_freqs_hz</span><span class="o">=</span><span class="n">load2_freqs_hz</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;_sweep_point&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">combo</span>
+        <span class="k">return</span> <span class="n">combo</span><span class="p">,</span> <span class="n">result</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_error_result</span><span class="p">(</span><span class="n">combo</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">exc</span><span class="p">:</span> <span class="ne">Exception</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;_sweep_point&quot;</span><span class="p">:</span> <span class="n">combo</span><span class="p">,</span>
+            <span class="s2">&quot;_error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">),</span>
+            <span class="s2">&quot;Cc1 (F)&quot;</span><span class="p">:</span> <span class="n">combo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Cc1&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">),</span>
+            <span class="s2">&quot;Cc2 (F)&quot;</span><span class="p">:</span> <span class="n">combo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Cc2&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">),</span>
+        <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">n_jobs</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">combo</span> <span class="ow">in</span> <span class="n">combos</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">_</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">_run_combo</span><span class="p">(</span><span class="n">combo</span><span class="p">)</span>
+                <span class="n">flat_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">json_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">entry</span> <span class="o">=</span> <span class="n">_to_jsonable</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                    <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">first_entry</span> <span class="k">else</span> <span class="s2">&quot;,&quot;</span>
+                    <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="n">json_file</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                    <span class="n">first_entry</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">skip_errors</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;analyze_system_load_grid failed at </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">combo</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                    <span class="n">err</span> <span class="o">=</span> <span class="n">_error_result</span><span class="p">(</span><span class="n">combo</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                    <span class="n">flat_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">json_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">entry</span> <span class="o">=</span> <span class="n">_to_jsonable</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+                        <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">first_entry</span> <span class="k">else</span> <span class="s2">&quot;,&quot;</span>
+                        <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+                        <span class="n">json_file</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                        <span class="n">first_entry</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">ordered_results</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">combos</span><span class="p">)</span>
+        <span class="n">combo_to_index</span> <span class="o">=</span> <span class="p">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">combo</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">param_names</span><span class="p">):</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">combo</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">combos</span><span class="p">)}</span>
+        <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">n_jobs</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="n">futures</span> <span class="o">=</span> <span class="p">{</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">_run_combo</span><span class="p">,</span> <span class="n">combo</span><span class="p">):</span> <span class="n">combo</span> <span class="k">for</span> <span class="n">combo</span> <span class="ow">in</span> <span class="n">combos</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">fut</span> <span class="ow">in</span> <span class="n">as_completed</span><span class="p">(</span><span class="n">futures</span><span class="p">):</span>
+                <span class="n">combo</span> <span class="o">=</span> <span class="n">futures</span><span class="p">[</span><span class="n">fut</span><span class="p">]</span>
+                <span class="n">idx_key</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">combo</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">param_names</span><span class="p">)</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">combo_to_index</span><span class="p">[</span><span class="n">idx_key</span><span class="p">]</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">_</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">fut</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+                    <span class="n">ordered_results</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">skip_errors</span><span class="p">:</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;analyze_system_load_grid failed at </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">combo</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                        <span class="n">ordered_results</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">_error_result</span><span class="p">(</span><span class="n">combo</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">raise</span>
+        <span class="n">flat_results</span> <span class="o">=</span> <span class="n">ordered_results</span>
+        <span class="k">if</span> <span class="n">json_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">flat_results</span><span class="p">:</span>
+                <span class="n">entry</span> <span class="o">=</span> <span class="n">_to_jsonable</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">first_entry</span> <span class="k">else</span> <span class="s2">&quot;,&quot;</span>
+                <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">json_file</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                <span class="n">first_entry</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">if</span> <span class="n">json_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;]</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">json_file</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reshape</span><span class="p">(</span><span class="n">flat</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">shapes</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">shapes</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">flat</span>
+        <span class="n">stride</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">shapes</span><span class="p">[</span><span class="mi">1</span><span class="p">:]))</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">_reshape</span><span class="p">(</span><span class="n">flat</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">stride</span><span class="p">:(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">stride</span><span class="p">],</span> <span class="n">shapes</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">shapes</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+
+    <span class="n">shapes</span> <span class="o">=</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">param_values</span><span class="p">]</span>
+    <span class="n">results_grid</span> <span class="o">=</span> <span class="n">_reshape</span><span class="p">(</span><span class="n">flat_results</span><span class="p">,</span> <span class="n">shapes</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">save_path</span> <span class="ow">and</span> <span class="n">save_path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.csv&quot;</span><span class="p">):</span>
+        <span class="n">serialisable_flat</span> <span class="o">=</span> <span class="p">[</span><span class="n">_to_jsonable</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">flat_results</span><span class="p">]</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">serialisable_flat</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">r</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">param_names</span><span class="p">})</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="s2">&quot;_error&quot;</span> <span class="ow">in</span> <span class="n">r</span><span class="p">:</span>
+                <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_sweep_point&quot;</span><span class="p">,</span> <span class="p">{})}</span>
+                <span class="n">row</span><span class="p">[</span><span class="s2">&quot;_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;_error&quot;</span><span class="p">]</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_sweep_point&quot;</span><span class="p">,</span> <span class="p">{})}</span>
+            <span class="n">row</span><span class="p">[</span><span class="s2">&quot;n_load_combos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;load_sweep_results&quot;</span><span class="p">,</span> <span class="p">[]))</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Completed </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">grid_points</span><span class="p">)</span><span class="si">}</span><span class="s2"> Cc points.&quot;</span><span class="p">)</span>
+        <span class="n">elapsed</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t_start</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;n_jobs=</span><span class="si">{</span><span class="n">n_jobs</span><span class="si">}</span><span class="s2">, elapsed=</span><span class="si">{</span><span class="n">elapsed</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">results_grid</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">run_accuracy_sweep_load_grid_apr22</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">sweep_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">fixed_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">load1_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">load2_freqs_hz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">save_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">skip_errors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">n_jobs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;APR22 compatibility wrapper for the load-grid sweep runner.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">run_accuracy_sweep_load_grid</span><span class="p">(</span>
+        <span class="n">sweep_params</span><span class="o">=</span><span class="n">sweep_params</span><span class="p">,</span>
+        <span class="n">fixed_params</span><span class="o">=</span><span class="n">fixed_params</span><span class="p">,</span>
+        <span class="n">load1_freqs_hz</span><span class="o">=</span><span class="n">load1_freqs_hz</span><span class="p">,</span>
+        <span class="n">load2_freqs_hz</span><span class="o">=</span><span class="n">load2_freqs_hz</span><span class="p">,</span>
+        <span class="n">save_path</span><span class="o">=</span><span class="n">save_path</span><span class="p">,</span>
+        <span class="n">skip_errors</span><span class="o">=</span><span class="n">skip_errors</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+        <span class="n">n_jobs</span><span class="o">=</span><span class="n">n_jobs</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="c1"># Backward-compatible aliases</span>
+<span class="n">analyze_system_cf_new</span> <span class="o">=</span> <span class="n">analyze_system_load_grid</span>
+<span class="n">run_accuracy_sweep_cf_new</span> <span class="o">=</span> <span class="n">run_accuracy_sweep_load_grid</span>
+<span class="n">run_accuracy_sweep_cf_new_APR22</span> <span class="o">=</span> <span class="n">run_accuracy_sweep_load_grid_apr22</span>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../index.html">
+              <img class="logo" src="../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation index</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

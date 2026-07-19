@@ -1,0 +1,39 @@
+Installation
+============
+
+Install from PyPI
+-----------------
+
+The recommended way to install **simpleLOMs** is from PyPI using pip:
+
+.. code-block:: bash
+
+   pip install simpleLOMs
+
+Install from source
+-------------------
+
+To install the latest development version from the repository:
+
+.. code-block:: bash
+
+   git clone https://github.com/elizabethkunz/simpleLOMs.git
+   cd simpleLOMs
+   pip install -e .
+
+For a non-editable install, omit the ``-e`` flag.
+
+Building the documentation locally
+----------------------------------
+
+From the repository root:
+
+.. code-block:: bash
+
+   cd docs
+   rm -rf _build
+   python3 -m pip install --user sphinx nbsphinx sphinx-nameko-theme
+   make html
+   open _build/html/index.html
+
+Notebooks are rendered without execution (see ``nbsphinx_execute`` in ``conf.py``), so you do not need to install **simpleLOMs** in the doc-build environment unless you want to execute cells locally.

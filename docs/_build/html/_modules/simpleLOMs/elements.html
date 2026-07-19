@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.elements &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../_static/nameko.css?v=2296cfae" />
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.elements</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.elements</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">elements.py</span>
+<span class="sd">-----------</span>
+<span class="sd">Primitive lumped-element circuit blocks built on top of scikit-rf. Each function returns an rf.Network (a 2-port element) that can</span>
+<span class="sd">be wired into an rf.Circuit connection list.</span>
+
+<span class="sd">For netowrks built using these eleemnts see simpleLOMs/networks/.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+
+
+<div class="viewcode-block" id="coupling_capacitor">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.elements.coupling_capacitor">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cc&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Series coupling capacitor.</span>
+
+<span class="sd">    Implemented as a SeriesImpedance with Z = 1 / (jωC).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    C : float</span>
+<span class="sd">        Capacitance in Farads.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">        Frequency sweep object.</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Label used inside rf.Circuit.</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port series capacitor network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">SeriesImpedance</span><span class="p">(</span>
+        <span class="n">frequency</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+        <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="n">Z</span><span class="o">=</span><span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">freq</span><span class="o">.</span><span class="n">w</span> <span class="o">*</span> <span class="n">C</span><span class="p">),</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="shunt_capacitor">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.elements.shunt_capacitor">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">shunt_capacitor</span><span class="p">(</span><span class="n">C</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ctog&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Shunt (to-ground) capacitor.</span>
+
+<span class="sd">    Implemented as a ShuntAdmittance with Y = jωC.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    C : float</span>
+<span class="sd">        Capacitance in Farads.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">        Frequency sweep object.</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Label used inside rf.Circuit.</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port shunt capacitor network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">ShuntAdmittance</span><span class="p">(</span>
+        <span class="n">frequency</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+        <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="n">Y</span><span class="o">=</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">freq</span><span class="o">.</span><span class="n">w</span> <span class="o">*</span> <span class="n">C</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.elements.lc_resonator">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">C</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;lc&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parallel LC resonator shunted to ground.</span>
+
+<span class="sd">    Implemented as a ShuntAdmittance with Y = jωC + 1/(jωL), the admittance of a parallel LC tank.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    L : float</span>
+<span class="sd">        Inductance in Henries.</span>
+<span class="sd">    C : float</span>
+<span class="sd">        Capacitance in Farads.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">        Frequency sweep object.</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Label used inside rf.Circuit.</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port shunt parallel-LC network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">ShuntAdmittance</span><span class="p">(</span>
+        <span class="n">frequency</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+        <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="n">Y</span><span class="o">=</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">freq</span><span class="o">.</span><span class="n">w</span> <span class="o">*</span> <span class="n">C</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">freq</span><span class="o">.</span><span class="n">w</span> <span class="o">*</span> <span class="n">L</span><span class="p">),</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../index.html">
+              <img class="logo" src="../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation index</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

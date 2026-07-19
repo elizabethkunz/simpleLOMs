@@ -1,0 +1,23 @@
+=== fit_lom optimized vs direct OptimizedFit ===
+d=0.007, Cc=6e-15, Ctog=1e-14, CPWParams(ep_r=11.45)
+
+--- POST-FIX (2026-07-18, fix applied to system.py — see TUTORIAL_HANDOFF.md §7) ---
+fit_lom foster   (default 20,001-pt grid):   0.06 s   f_r = 8.5828 GHz  (ref 8.583)
+fit_lom analytical (default grid):           0.26 s   f_r = 8.3696 GHz  (ref 8.370)
+fit_lom optimized (default grid):            3.32 s   f_r = 8.4500 GHz  (old fit_lom 8.4489)
+fit_lom optimized (8,001-pt tutorial grid):  3.14 s   f_r = 8.4529 GHz
+direct OptimizedFit (8,001-pt recipe):       3.13 s   f_r = 8.4529 GHz  (identical to fit_lom @8k)
+asym  optimized  Cc1=6fF Cc2=12fF:           4.08 s   f_r = 8.4559 GHz
+asym  analytical Cc1=6fF Cc2=12fF:           0.23 s   f_r = 8.3308 GHz
+optimized L = 5.7060e-10 H, C = 6.2172e-13 F  (pre-fix: 5.6254e-10 / 6.3080e-13;
+  ~1.4% shift along the same-f_r ridge — f_r within 0.01%, Z_r 29.9 -> 30.3 ohm)
+
+--- PRE-FIX snapshot (kept for reference) ---
+(a) fit_lom(..., model='optimized'): 269.329 s
+(b) extract_f0_kappa(...): 24.384 s
+(c) 200k-pt fr + cpw_resonator_network_2port: 167.922 s
+(extra) OptimizedFit on 200k grid only: 120.499 s
+(d) direct OptimizedFit (8001 pts, 4-12 GHz): 3.736 s
+  fit_lom L,C            = 5.625365e-10, 6.307980e-13  -> f_r = 8.448890e+09 Hz
+  direct OptimizedFit 8k = 5.908001e-10, 6.000464e-13  -> f_r = 8.452933e+09 Hz
+  extract_f0_kappa f0    = 8.369673e+09 Hz, kappa = 2.458678e+06 Hz

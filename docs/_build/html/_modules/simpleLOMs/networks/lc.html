@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.networks.lc &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/nameko.css?v=2296cfae" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.networks.lc</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.networks.lc</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">networks/lc.py</span>
+<span class="sd">--------------</span>
+<span class="sd">Network builders for lumped-element LC resonator topologies.</span>
+
+<span class="sd">Topology families</span>
+<span class="sd">-----------------</span>
+<span class="sd">Basic 2-port:</span>
+<span class="sd">    [Port1] -- Cc1 -- [LC shunt] -- Cc2 -- [Port2]</span>
+
+<span class="sd">With grounds (mirrors CPW Ctog capacitors):</span>
+<span class="sd">    [Port1] -- Cc1 -- Ctog1 -- [LC shunt] -- Ctog2 -- Cc2 -- [Port2]</span>
+
+<span class="sd">Loaded variants insert an LC load (e.g. a qubit) on each port side:</span>
+<span class="sd">    [Port1] -- cc_port -- load -- Cc1 -- ... -- Cc2 -- load -- cc_port -- [Port2]</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.elements</span><span class="w"> </span><span class="kn">import</span> <span class="n">coupling_capacitor</span><span class="p">,</span> <span class="n">shunt_capacitor</span><span class="p">,</span> <span class="n">lc_resonator</span>
+
+
+<div class="viewcode-block" id="lc_resonator_network">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_network">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_network</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Single-port LC resonator (reflection measurement).</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- Cc1 (series) -- [LC shunt] -- Cc2 (shunt to open) -- [Open]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the LC resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        1-port reflection network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>   <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>  <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc2</span>   <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">open_</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Open</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;open&quot;</span><span class="p">)</span>
+    <span class="n">port1</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>   <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>   <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc2</span><span class="p">,</span>   <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc2</span><span class="p">,</span>   <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">open_</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+ 
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_1port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator_network_2port">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_network_2port">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_network_2port</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator (transmission measurement).</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- Cc1 (series) -- [LC shunt] -- Cc2 (series) -- [Port2]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the LC resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port transmission network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>   <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>  <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc2</span>   <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>  <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port1</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port2</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>   <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>  <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc2</span><span class="p">,</span>   <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_2port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator_network_with_grounds_2port">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_network_with_grounds_2port">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_network_with_grounds_2port</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator with shunt-to-ground capacitors on each side.</span>
+
+<span class="sd">    These Ctog capacitors mirror the geometry of the CPW model, where</span>
+<span class="sd">    the ground capacitance at each gap is an important feature of the</span>
+<span class="sd">    distributed line.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- Cc1 -- Ctog1 (shunt) -- [LC shunt] -- Ctog2 (shunt) -- Cc2 -- [Port2]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the LC resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    Ctog1, Ctog2 : float</span>
+<span class="sd">        Shunt-to-ground capacitances in Farads.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port transmission network with ground capacitances.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>   <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>   <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">)</span>
+    <span class="n">cc2</span>   <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc2&quot;</span><span class="p">,</span>   <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">ctog1</span> <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span>   <span class="n">C</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ctog1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">ctog2</span> <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span>   <span class="n">C</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ctog2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port1</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port2</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>   <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>   <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ctog1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">ctog1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ctog2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">ctog2</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc2</span><span class="p">,</span>   <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc2</span><span class="p">,</span>   <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_with_grounds_2port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator_loaded_network_2port">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_loaded_network_2port">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_loaded_network_2port</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator with LC loads on each port side.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- cc_port1 -- load1 -- Cc1 -- [LC shunt] -- Cc2 -- load2 -- cc_port2 -- [Port2]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the main resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    Lload1, Cload1 : float</span>
+<span class="sd">        Load resonator on port 1 side.</span>
+<span class="sd">    Lload2, Cload2 : float</span>
+<span class="sd">        Load resonator on port 2 side.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    ------- </span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port loaded transmission network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>      <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>       <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc2</span>      <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc2&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port1</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port2</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load1</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load2</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port1</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port2</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc2</span><span class="p">,</span>      <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc2</span><span class="p">,</span>      <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load2</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_loaded_2port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator_loaded_network_with_grounds_2port">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_loaded_network_with_grounds_2port">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_loaded_network_with_grounds_2port</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator with both ground capacitors and LC loads.</span>
+
+<span class="sd">    This is the most complete LC LOM topology: it includes the shunt Ctog</span>
+<span class="sd">    capacitors that model CPW ground geometry AND external load resonators</span>
+<span class="sd">    on each port side.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- cc_port1 -- load1 -- Cc1 -- Ctog1 -- [LC shunt] -- Ctog2 -- Cc2 -- load2 -- cc_port2 -- [Port2]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the main resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    Ctog1, Ctog2 : float</span>
+<span class="sd">        Shunt-to-ground capacitances in Farads.</span>
+<span class="sd">    Lload1, Cload1 : float</span>
+<span class="sd">        Load resonator on port 1 side.</span>
+<span class="sd">    Lload2, Cload2 : float</span>
+<span class="sd">        Load resonator on port 2 side.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port fully-loaded transmission network with ground caps.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>      <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>       <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">)</span>
+    <span class="n">cc2</span>      <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc2&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port1</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port2</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">ctog1</span>    <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span>   <span class="n">C</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ctog1&quot;</span><span class="p">,</span>    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">ctog2</span>    <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span>   <span class="n">C</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ctog2&quot;</span><span class="p">,</span>    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load1</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load2</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port1</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port2</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ctog1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">ctog1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ctog2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">ctog2</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc2</span><span class="p">,</span>      <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc2</span><span class="p">,</span>      <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load2</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_loaded_with_grounds_2port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+
+<div class="viewcode-block" id="lc_resonator_network_2port_shifted">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_network_2port_shifted">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_network_2port_shifted</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator with π-phase correction on S21/S12.</span>
+
+<span class="sd">    Identical to lc_resonator_network_2port but negates the off-diagonal</span>
+<span class="sd">    S-matrix elements to account for the π electrical phase that a half-wave</span>
+<span class="sd">    CPW resonator accumulates at resonance.  A lumped LC shunt has no</span>
+<span class="sd">    transmission line length so it does not pick up this phase naturally;</span>
+<span class="sd">    the correction restores the correct sign convention for comparison</span>
+<span class="sd">    against CPW reference networks.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- Cc1 (series) -- [LC shunt] -- Cc2 (series) -- [Port2]</span>
+<span class="sd">        (then S21, S12 negated)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">lc_resonator_network_2port</span><span class="p">(</span><span class="n">Leff</span><span class="p">,</span> <span class="n">Ceff</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="p">)</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">net</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">s</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">s</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">(</span><span class="n">frequency</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="n">s</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">net</span><span class="o">.</span><span class="n">z0</span><span class="p">,</span>
+                      <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_2port_shifted&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator_loaded_network_2port_shifted">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_loaded_network_2port_shifted">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_loaded_network_2port_shifted</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port loaded LC resonator with π-phase correction on S21/S12.</span>
+
+<span class="sd">    Identical to lc_resonator_loaded_network_2port but negates S21/S12</span>
+<span class="sd">    to account for the missing half-wave CPW phase.  See</span>
+<span class="sd">    lc_resonator_network_2port_shifted for full explanation.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- cc_port1 -- load1 -- Cc1 -- [LC shunt] -- Cc2 -- load2 -- cc_port2 -- [Port2]</span>
+<span class="sd">        (then S21, S12 negated)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">lc_resonator_loaded_network_2port</span><span class="p">(</span>
+        <span class="n">Leff</span><span class="p">,</span> <span class="n">Ceff</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span><span class="p">,</span> <span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">net</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">s</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">s</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">(</span><span class="n">frequency</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="n">s</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">net</span><span class="o">.</span><span class="n">z0</span><span class="p">,</span>
+                      <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_loaded_2port_shifted&quot;</span><span class="p">)</span>   </div>
+
+
+
+
+
+<div class="viewcode-block" id="lc_resonator_single_load_network_2port">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_single_load_network_2port">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_single_load_network_2port</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator with LC loads on each port side.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- cc_port1 -- load1 -- Cc1 -- [LC shunt] -- Cc2 -- load2 -- cc_port2 -- [Port2]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the main resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    Lload1, Cload1 : float</span>
+<span class="sd">        Load resonator on port 1 side.</span>
+<span class="sd">    Lload2, Cload2 : float</span>
+<span class="sd">        Load resonator on port 2 side.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    ------- </span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port loaded transmission network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>      <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>       <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port1</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port2</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load1</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port1</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port2</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_loaded_2port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+<div class="viewcode-block" id="lc_resonator_single_load_network_with_grounds_2port">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_resonator_single_load_network_with_grounds_2port">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_resonator_single_load_network_with_grounds_2port</span><span class="p">(</span>
+    <span class="n">Leff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ceff</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Lload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two-port LC resonator with both ground capacitors and LC loads.</span>
+
+<span class="sd">    This is the most complete LC LOM topology: it includes the shunt Ctog</span>
+<span class="sd">    capacitors that model CPW ground geometry AND external load resonators</span>
+<span class="sd">    on each port side.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- cc_port1 -- load1 -- Cc1 -- Ctog1 -- [LC shunt] -- Ctog2 -- Cc2 -- load2 -- cc_port2 -- [Port2]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Leff, Ceff : float</span>
+<span class="sd">        Effective inductance (H) and capacitance (F) of the main resonator.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    Ctog1, Ctog2 : float</span>
+<span class="sd">        Shunt-to-ground capacitances in Farads.</span>
+<span class="sd">    Lload1, Cload1 : float</span>
+<span class="sd">        Load resonator on port 1 side.</span>
+<span class="sd">    Lload2, Cload2 : float</span>
+<span class="sd">        Load resonator on port 2 side.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port fully-loaded transmission network with ground caps.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc1</span>      <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>   <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>      <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">lc</span>       <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Leff</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Ceff</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lc&quot;</span><span class="p">)</span>
+    <span class="n">cc_port1</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc_port2</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port2&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">ctog1</span>    <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span>   <span class="n">C</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ctog1&quot;</span><span class="p">,</span>    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">ctog2</span>    <span class="o">=</span> <span class="n">shunt_capacitor</span><span class="p">(</span>   <span class="n">C</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ctog2&quot;</span><span class="p">,</span>    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load1</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload1</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load1&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port1</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">port2</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>      <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ctog1</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">ctog1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">lc</span><span class="p">,</span>       <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ctog2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">ctog2</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port2</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_loaded_with_grounds_2port&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+<div class="viewcode-block" id="lc_load_bare_network">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_load_bare_network">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_load_bare_network</span><span class="p">(</span>
+    <span class="n">Lload</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc_port</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Single isolated LC load resonator coupled to one port via Cc_port.</span>
+<span class="sd">    Used to extract the &#39;true&#39; bare frequency of a load as seen from</span>
+<span class="sd">    the port, accounting for the capacitive loading of the coupler.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- Cc_port (series) -- [LC shunt] -- [Open]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Lload, Cload : float</span>
+<span class="sd">        Inductance (H) and capacitance (F) of the load resonator.</span>
+<span class="sd">    Cc_port : float</span>
+<span class="sd">        Coupling capacitance to the port (F).</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        1-port reflection network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc_port</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc_port</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load&quot;</span><span class="p">,</span>   <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">open_</span>   <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Open</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;open&quot;</span><span class="p">)</span>
+    <span class="n">port1</span>   <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>   <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">open_</span><span class="p">,</span>   <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_load_bare&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+<div class="viewcode-block" id="lc_load_dressed_network_2">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_load_dressed_network_2">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_load_dressed_network_2</span><span class="p">(</span>
+    <span class="n">Lload</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc_port</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Isolated LC load with both port coupler and CPW coupler attached,</span>
+<span class="sd">    to extract the &#39;dressed&#39; bare frequency accounting for capacitive</span>
+<span class="sd">    loading from both sides.</span>
+
+<span class="sd">    Topology:</span>
+<span class="sd">        [Port1] -- Cc_port (series) -- [LC shunt] -- Cc1 (series) -- [Open]</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Lload, Cload : float</span>
+<span class="sd">        Inductance (H) and capacitance (F) of the load resonator.</span>
+<span class="sd">    Cc_port : float</span>
+<span class="sd">        Port coupling capacitance (F) — hardcoded as 1e-15 in your topology.</span>
+<span class="sd">    Cc1 : float</span>
+<span class="sd">        CPW-side coupling capacitance (F).</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        1-port reflection network.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cc_port</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc_port</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load&quot;</span><span class="p">,</span>   <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc1</span>     <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>     <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>     <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">open_</span>   <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Open</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;open&quot;</span><span class="p">)</span>
+    <span class="n">port1</span>   <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>   <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>     <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>     <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">open_</span><span class="p">,</span>   <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_load_dressed&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+
+
+
+<span class="c1"># def lc_load_dressed_network(</span>
+<span class="c1">#     Lload: float,</span>
+<span class="c1">#     Cload: float,</span>
+<span class="c1">#     Cc_port: float,</span>
+<span class="c1">#     Cc1: float,</span>
+<span class="c1">#     freq: rf.Frequency,</span>
+<span class="c1">#     Z0: float = 50,</span>
+<span class="c1"># ) -&gt; rf.Network:</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     Isolated LC load with both port coupler and CPW coupler attached,</span>
+<span class="c1">#     to extract the &#39;dressed&#39; bare frequency accounting for capacitive</span>
+<span class="c1">#     loading from both sides.</span>
+
+<span class="c1">#     Topology:</span>
+<span class="c1">#         [Port1] -- Cc_port (series) -- [LC shunt] -- Cc1 (series) -- [Open]</span>
+
+<span class="c1">#     Parameters</span>
+<span class="c1">#     ----------</span>
+<span class="c1">#     Lload, Cload : float</span>
+<span class="c1">#         Inductance (H) and capacitance (F) of the load resonator.</span>
+<span class="c1">#     Cc_port : float</span>
+<span class="c1">#         Port coupling capacitance (F) — hardcoded as 1e-15 in your topology.</span>
+<span class="c1">#     Cc1 : float</span>
+<span class="c1">#         CPW-side coupling capacitance (F).</span>
+<span class="c1">#     freq : rf.Frequency</span>
+<span class="c1">#     Z0 : float</span>
+<span class="c1">#         Reference impedance in Ohms.</span>
+
+<span class="c1">#     Returns</span>
+<span class="c1">#     -------</span>
+<span class="c1">#     rf.Network</span>
+<span class="c1">#         1-port reflection network.</span>
+<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     cc_port = coupling_capacitor(C=Cc_port, freq=freq, name=&quot;cc_port&quot;, Z0=Z0)</span>
+<span class="c1">#     load    = lc_resonator(L=Lload, C=Cload, freq=freq, name=&quot;load&quot;,   Z0=Z0)</span>
+<span class="c1">#     cc1     = coupling_capacitor(C=Cc1,     freq=freq, name=&quot;cc1&quot;,     Z0=Z0)</span>
+<span class="c1">#     open_   = rf.Circuit.Open(freq, name=&quot;open&quot;)</span>
+<span class="c1">#     port1   = rf.Circuit.Port(freq, name=&quot;P1&quot;, z0=Z0)</span>
+
+<span class="c1">#     cnx = [</span>
+<span class="c1">#         [(port1,   0), (cc_port, 0)],</span>
+<span class="c1">#         [(cc_port, 1), (load,    0)],</span>
+<span class="c1">#         [(load,    1), (cc1,     0)],</span>
+<span class="c1">#         [(cc1,     1), (open_,   0)],</span>
+<span class="c1">#     ]</span>
+<span class="c1">#     return rf.Circuit(cnx, name=&quot;LC_load_dressed&quot;).network</span>
+
+
+<div class="viewcode-block" id="lc_load_dressed_network">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.networks.lc.lc_load_dressed_network">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lc_load_dressed_network</span><span class="p">(</span>
+    <span class="n">Lload</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cload</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc_port</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+    <span class="n">cc_port</span> <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc_port</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc_port&quot;</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">load</span>    <span class="o">=</span> <span class="n">lc_resonator</span><span class="p">(</span><span class="n">L</span><span class="o">=</span><span class="n">Lload</span><span class="p">,</span> <span class="n">C</span><span class="o">=</span><span class="n">Cload</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;load&quot;</span><span class="p">,</span>   <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cc1</span>     <span class="o">=</span> <span class="n">coupling_capacitor</span><span class="p">(</span><span class="n">C</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>      <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cc1&quot;</span><span class="p">,</span>    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">term</span>    <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Ground</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;term&quot;</span><span class="p">)</span>  <span class="c1"># Z0 termination</span>
+    <span class="n">port1</span>   <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+    <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[(</span><span class="n">port1</span><span class="p">,</span>   <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">cc_port</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc_port</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">load</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">load</span><span class="p">,</span>    <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">cc1</span><span class="p">,</span>     <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">[(</span><span class="n">cc1</span><span class="p">,</span>     <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">term</span><span class="p">,</span>    <span class="mi">0</span><span class="p">)],</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;LC_load_dressed&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../../index.html">
+              <img class="logo" src="../../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation index</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

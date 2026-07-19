@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.models.foster_fit &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/nameko.css?v=2296cfae" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.models.foster_fit</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.models.foster_fit</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">models/foster.py</span>
+<span class="sd">----------------</span>
+<span class="sd">FosterFit: admittance-slope (Foster synthesis) method for extracting</span>
+<span class="sd">the effective L and C of a CPW resonator.</span>
+
+<span class="sd">Algorithm summary</span>
+<span class="sd">-----------------</span>
+<span class="sd">1. Build a 2-port CPW transmission line network (no coupling caps, just</span>
+<span class="sd">   the bare line terminated at both ends with a high impedance).</span>
+<span class="sd">2. Compute the input admittance Yin(ω) seen at port 1 with the port 2</span>
+<span class="sd">   load in place:</span>
+<span class="sd">       Yin = Y11 - Y12*Y21 / (Y22 + YL)</span>
+<span class="sd">3. Find the resonance frequency ω0 from the peak in Im(S22).</span>
+<span class="sd">4. At ω0, the imaginary part of Yin passes through zero with a positive</span>
+<span class="sd">   slope (for a series-like resonance).  The Foster synthesis theorem</span>
+<span class="sd">   relates that slope to an equivalent LC:</span>
+<span class="sd">       C_eq = 0.5 * dB/dω |_{ω=ω0}    where B = Im(Yin)</span>
+<span class="sd">       L_eq = 1 / (ω0² * C_eq)</span>
+<span class="sd">5. Store C_eq → self.C, L_eq → self.L.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.signal</span><span class="w"> </span><span class="kn">import</span> <span class="n">find_peaks</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">skrf.media</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPW</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPWParams</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.elements</span><span class="w"> </span><span class="kn">import</span> <span class="n">lc_resonator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.lc</span><span class="w"> </span><span class="kn">import</span> <span class="n">lc_resonator_network_with_grounds_2port</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="FosterFit">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.FosterFit">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FosterFit</span><span class="p">(</span><span class="n">BaseFit</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lumped LC model via Foster admittance synthesis on a bare CPW line.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cpw_params : CPWParams, optional</span>
+<span class="sd">        Physical geometry and material parameters for the CPW.</span>
+<span class="sd">        Uses default CPWParams() (11.7 µm / 5.1 µm gap, ultracold Si)</span>
+<span class="sd">        if not provided.</span>
+<span class="sd">    port_z0 : float, optional</span>
+<span class="sd">        Port impedance used when building the bare CPW network for synthesis.</span>
+<span class="sd">        Default 500 Ω (high impedance → weakly loaded line, closer to</span>
+<span class="sd">        the unloaded resonator condition).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    L : float or None</span>
+<span class="sd">        Fitted effective inductance in Henries.  None before fit().</span>
+<span class="sd">    C : float or None</span>
+<span class="sd">        Fitted effective capacitance in Farads.  None before fit().</span>
+<span class="sd">    yin : np.ndarray or None</span>
+<span class="sd">        Complex input admittance array computed during fit().  Stored</span>
+<span class="sd">        for diagnostics / plotting without recomputing.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Basic usage::</span>
+
+<span class="sd">        from simpleLOMs.params import CPWParams</span>
+<span class="sd">        from simpleLOMs.models.foster import FosterFit</span>
+<span class="sd">        import skrf as rf</span>
+
+<span class="sd">        freq = rf.Frequency(4e9, 10e9, 10_001, unit=&quot;Hz&quot;)</span>
+<span class="sd">        cpw  = CPWParams(ep_r=11.45)</span>
+
+<span class="sd">        model = FosterFit(cpw_params=cpw)</span>
+<span class="sd">        model.fit(freq, d=7e-3)</span>
+
+<span class="sd">        print(model.get_params())</span>
+<span class="sd">        # {&#39;L&#39;: 5.53e-10, &#39;C&#39;: 6.22e-13, &#39;f0_Hz&#39;: 8.58e9}</span>
+
+<span class="sd">        net = model.get_network(freq, Cc1=5e-15, Cc2=5e-15,</span>
+<span class="sd">                                Ctog1=1e-14, Ctog2=1e-14)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cpw_params</span><span class="p">:</span> <span class="n">CPWParams</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">port_z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">500.0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">:</span> <span class="n">CPWParams</span> <span class="o">=</span> <span class="n">cpw_params</span> <span class="k">if</span> <span class="n">cpw_params</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">CPWParams</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port_z0</span><span class="p">:</span>   <span class="nb">float</span>      <span class="o">=</span> <span class="n">port_z0</span>
+
+        <span class="c1"># Set after fit()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">:</span>   <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>       <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">:</span>   <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>       <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">yin</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>  <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_f0_hz</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>    <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># resonance freq found during fit</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># fit()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="FosterFit.fit">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.FosterFit.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Run Foster synthesis on a bare CPW line of length d.</span>
+
+<span class="sd">        Computes the input admittance Yin(ω), finds ω0 from a peak in</span>
+<span class="sd">        Im(S22), then extracts C_eq from the admittance slope and L_eq</span>
+<span class="sd">        from the resonance constraint ω0² L C = 1.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : rf.Frequency</span>
+<span class="sd">            Frequency sweep.  Should span at least one resonance of the</span>
+<span class="sd">            bare CPW line at length d.</span>
+<span class="sd">        d : float</span>
+<span class="sd">            Physical resonator length in metres.</span>
+<span class="sd">        **kwargs</span>
+<span class="sd">            Ignored — included for a consistent BaseFit interface.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpw_params</span>
+
+        <span class="c1"># 1. Build bare CPW media and a simple 2-port transmission line</span>
+        <span class="n">cpw_media</span> <span class="o">=</span> <span class="n">CPW</span><span class="p">(</span>
+            <span class="n">freq</span><span class="p">,</span>
+            <span class="n">w</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">w</span><span class="p">,</span>
+            <span class="n">s</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">s</span><span class="p">,</span>
+            <span class="n">t</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">t</span><span class="p">,</span>
+            <span class="n">h</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">h</span><span class="p">,</span>
+            <span class="n">rho</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">rho</span><span class="p">,</span>
+            <span class="n">ep_r</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">ep_r</span><span class="p">,</span>
+            <span class="n">has_metal_backside</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">has_metal_backside</span><span class="p">,</span>
+            <span class="n">tand</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">tand</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">line</span>  <span class="o">=</span> <span class="n">cpw_media</span><span class="o">.</span><span class="n">line</span><span class="p">(</span><span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m&quot;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cpw_line&quot;</span><span class="p">)</span>
+        <span class="n">port1</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P1&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">port_z0</span><span class="p">)</span>
+        <span class="n">port2</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="o">.</span><span class="n">Port</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;P2&quot;</span><span class="p">,</span> <span class="n">z0</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">port_z0</span><span class="p">)</span>
+
+        <span class="n">cnx</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">[(</span><span class="n">port1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">line</span><span class="p">,</span>  <span class="mi">0</span><span class="p">)],</span>
+            <span class="p">[(</span><span class="n">line</span><span class="p">,</span>  <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">port2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span>
+        <span class="p">]</span>
+        <span class="n">ntw</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Circuit</span><span class="p">(</span><span class="n">cnx</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;bare_cpw&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">network</span>
+
+        <span class="c1"># 2. Extract resonance from peak in Im(S22)</span>
+        <span class="c1">#    (S22 has a reflection peak at resonance for this topology)</span>
+        <span class="n">f_hz</span>  <span class="o">=</span> <span class="n">ntw</span><span class="o">.</span><span class="n">frequency</span><span class="o">.</span><span class="n">f</span>
+        <span class="n">s22</span>   <span class="o">=</span> <span class="n">ntw</span><span class="o">.</span><span class="n">s</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">peaks</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_peaks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">s22</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">peaks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;FosterFit.fit(): no resonance peak found in Re(S22). &quot;</span>
+                <span class="s2">&quot;Check that freq spans a resonance of the CPW line at d=</span><span class="si">{}</span><span class="s2"> m.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Use the first (lowest-frequency) resonance</span>
+        <span class="n">f0_hz</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">f_hz</span><span class="p">[</span><span class="n">peaks</span><span class="p">[</span><span class="mi">0</span><span class="p">]])</span>
+        <span class="n">w0</span>    <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f0_hz</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;FosterFit: resonance found at </span><span class="si">%.4f</span><span class="s2"> GHz&quot;</span><span class="p">,</span> <span class="n">f0_hz</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">)</span>
+
+        <span class="c1"># 3. Compute Yin = Y11 - Y12*Y21 / (Y22 + YL)</span>
+        <span class="n">Y</span>  <span class="o">=</span> <span class="n">ntw</span><span class="o">.</span><span class="n">y</span>
+        <span class="n">YL</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">port_z0</span>
+        <span class="n">yin</span> <span class="o">=</span> <span class="n">Y</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">Y</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">Y</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="n">Y</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">YL</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">yin</span> <span class="o">=</span> <span class="n">yin</span>  <span class="c1"># store for diagnostics</span>
+
+        <span class="c1"># 4. Foster synthesis: C_eq = 0.5 * dB/dω at ω0</span>
+        <span class="n">w_rad</span>  <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f_hz</span>
+        <span class="n">B</span>      <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">imag</span><span class="p">(</span><span class="n">yin</span><span class="p">)</span>
+        <span class="n">dB_dw</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">w_rad</span><span class="p">)</span>
+
+        <span class="n">i0</span>           <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">w_rad</span> <span class="o">-</span> <span class="n">w0</span><span class="p">))</span>
+        <span class="n">slope_at_w0</span>  <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dB_dw</span><span class="p">[</span><span class="n">i0</span><span class="p">])</span>
+        <span class="n">C_eq</span>         <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">slope_at_w0</span>
+        <span class="n">L_eq</span>         <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">w0</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">C_eq</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;FosterFit: C_eq = </span><span class="si">%.4e</span><span class="s2"> F, L_eq = </span><span class="si">%.4e</span><span class="s2"> H&quot;</span><span class="p">,</span> <span class="n">C_eq</span><span class="p">,</span> <span class="n">L_eq</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span>     <span class="o">=</span> <span class="n">C_eq</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span>     <span class="o">=</span> <span class="n">L_eq</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_f0_hz</span> <span class="o">=</span> <span class="n">f0_hz</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># get_network()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="FosterFit.get_network">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.FosterFit.get_network">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_network</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build the 2-port LC LOM network using the Foster-synthesised L and C.</span>
+
+<span class="sd">        Uses the &quot;with grounds&quot; topology so that Ctog1/Ctog2 are included,</span>
+<span class="sd">        matching the structure of the CPW model that was synthesised.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : rf.Frequency</span>
+<span class="sd">            May differ from the freq used in fit().</span>
+<span class="sd">        Cc1, Cc2 : float</span>
+<span class="sd">            Coupling capacitances in Farads.</span>
+<span class="sd">        Ctog1, Ctog2 : float</span>
+<span class="sd">            Shunt-to-ground capacitances in Farads.</span>
+<span class="sd">        Z0 : float</span>
+<span class="sd">            Reference impedance in Ohms.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        rf.Network</span>
+<span class="sd">            2-port LC network with ground capacitors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fitted</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">(</span>
+            <span class="n">Leff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+            <span class="n">Ceff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span>
+            <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span>
+            <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+            <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># get_params()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="FosterFit.get_params">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.FosterFit.get_params">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_params</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return fitted parameters.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Keys: &quot;L&quot; (H), &quot;C&quot; (F), &quot;f0_Hz&quot; (resonance used for synthesis).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fitted</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;L&quot;</span><span class="p">:</span>     <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+            <span class="s2">&quot;C&quot;</span><span class="p">:</span>     <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="s2">&quot;f0_Hz&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_f0_hz</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_fitted</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;FosterFit(L=</span><span class="si">{:.4e}</span><span class="s2"> H, C=</span><span class="si">{:.4e}</span><span class="s2"> F, f0=</span><span class="si">{:.4f}</span><span class="s2"> GHz)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_f0_hz</span> <span class="o">/</span> <span class="mf">1e9</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;FosterFit(unfitted)&quot;</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../../index.html">
+              <img class="logo" src="../../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation index</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

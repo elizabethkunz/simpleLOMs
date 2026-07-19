@@ -1,0 +1,82 @@
+Publishing to PyPI
+==================
+
+You can publish **simpleLOMs** to PyPI in two ways: automatically via GitHub Actions (recommended) or manually from your machine.
+
+Option 1: Publish via GitHub Actions (recommended)
+--------------------------------------------------
+
+The repo’s **Release** workflow builds the package and publishes to PyPI when you run it or when you publish a GitHub release.
+
+**One-time setup**
+
+1. **Create a PyPI account** (if you don’t have one): https://pypi.org/account/register/
+
+2. **Use Trusted Publishing (no API token needed):**
+   - On PyPI: **Account settings → Publishing → Add a new pending publisher**
+   - Choose **GitHub**.
+   - **Owner**: ``elizabethkunz``
+   - **Repository name**: ``simpleLOMs``
+   - **Workflow name**: ``release.yml``
+   - **Environment name**: leave empty (or use ``release`` if you create that environment)
+   - Click **Add**.
+   - In your GitHub repo, go to **Settings → Actions → General**. Under “Workflow permissions”, choose **Read and write permissions**, then save.
+
+3. **Create the project on PyPI (first time only):**
+   - Go to https://pypi.org/project/manage/ and **Add new project**.
+   - Project name: **simpleLOMs** (must match ``name`` in ``pyproject.toml``).
+   - After you add the trusted publisher above, the project will be linked when the workflow runs.
+
+**Publishing**
+
+- **From the Actions tab:** **Actions → Release → Run workflow** (branch: ``main``) → **Run workflow**. This builds the package and publishes to PyPI.
+- **From a release:** **Releases → Create a new release** (tag e.g. ``v0.1.0``, title optional). When you click **Publish release**, the workflow runs and publishes to PyPI (and deploys docs if GitHub Pages is set up).
+
+Option 2: Publish manually
+--------------------------
+
+**One-time**
+
+1. Create a PyPI account: https://pypi.org/account/register/
+2. Install build tools: ``pip install build twine``
+3. (Optional) Create an API token: PyPI **Account settings → API tokens** (use “Add API token”, scope: entire account or just this project).
+
+**Each release**
+
+1. **Bump version** in ``pyproject.toml`` (e.g. ``version = "0.1.1"``).
+
+2. **Build the package:**
+
+   .. code-block:: bash
+
+      python -m build
+
+   This creates ``dist/simpleLOMs-0.1.1.tar.gz`` and ``dist/simpleLOMs-0.1.1-py3-none-any.whl``.
+
+3. **Upload to PyPI** (replace ``YOUR_TOKEN`` with your API token or use ``__token__`` and paste when prompted):
+
+   .. code-block:: bash
+
+      twine upload dist/* -u __token__ -p YOUR_TOKEN
+
+   For **Test PyPI** first:
+
+   .. code-block:: bash
+
+      twine upload --repository testpypi dist/* -u __token__ -p YOUR_TEST_PYPI_TOKEN
+
+   Then install with: ``pip install -i https://test.pypi.org/simple/ simpleLOMs``
+
+4. **Commit and tag** (optional but good practice):
+   .. code-block:: bash
+
+      git add pyproject.toml
+      git commit -m "Bump version to 0.1.1"
+      git tag v0.1.1
+      git push origin main --tags
+
+After publishing, anyone can install with:
+
+.. code-block:: bash
+
+   pip install simpleLOMs

@@ -1,0 +1,55 @@
+.. image:: _static/logo.png
+   :align: center
+   :width: 200px
+
+simpleLOMs
+==========
+
+**Simple Lumped Oscillator Models** for superconducting quantum device design.
+
+
+This package provides an easy way to extract **effective lumped oscillator models**, known as lumped element models, 
+for distributed elements in superconducting quantum device design.
+In superconducting quantum device design, finite element electromagnetic (FEM)
+simulations are required throughout the design process. These are both
+computationally intensive and time-consuming. **Lumped oscillator models (LOMs)**
+allow for modular FEM simulations of superconducting device designs that can then
+be combined in an effective circuit model. These lumped circuit models are easily
+translated into circuit Hamiltonians. However, accurately incorporating the
+effects of distributed elements such as transmission line resonators is a challenge.
+
+This package develops and tests a **higher-order effective lumped oscillator model**
+for a coplanar waveguide (CPW) resonator coupled to arbitrary loads. The LOM uses
+capacitances obtained from FEM simulations of individual circuit elements and
+numerical calculations of distributed element impedances to construct an effective
+lumped resonator for each distributed resonator. Importantly, the model takes into
+account loading on both ends of a transmission line. It shows a significant
+improvement over the baseline LOM in predicting the system's Hamiltonian
+parameters: resonant frequency, coupling to lossy elements, and coupling to other
+resonant modes.
+
+Contents
+--------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Documentation
+
+   install
+   api
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Tutorials
+
+   tutorials/01_fit_lc_models
+   tutorials/02_sweep_accuracies
+   tutorials/03_cpw_parameter_sweeps
+   tutorials/04_compare_to_simulations
+
+Indices and tables
+------------------
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

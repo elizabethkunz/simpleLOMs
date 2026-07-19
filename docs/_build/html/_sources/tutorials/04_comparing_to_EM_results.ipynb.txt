@@ -1,0 +1,29 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "b3d71b69",
+   "metadata": {},
+   "source": [
+    "# Tutorial 4: Comparing circuit simulations with EM results.\n",
+    "\n",
+    "This tutorial shows you how to compare the results of circuit-level simulation with the results of full Finite Element Model results.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ced55c6c",
+   "metadata": {},
+   "source": [
+    "This tutorial is coming soon, so please stay tuned!"
+   ]
+  }
+ ],
+ "metadata": {
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.models.analytical_fit &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/nameko.css?v=2296cfae" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.models.analytical_fit</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.models.analytical_fit</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">models/analytical.py</span>
+<span class="sd">--------------------</span>
+<span class="sd">AnalyticalFit: closed-form approximation for the effective L and C of a</span>
+<span class="sd">λ/2 CPW resonator.</span>
+
+<span class="sd">Algorithm summary</span>
+<span class="sd">-----------------</span>
+<span class="sd">For a half-wave (λ/2) CPW resonator the distributed line has a well-known</span>
+<span class="sd">lumped-element equivalent valid near the fundamental resonance:</span>
+
+<span class="sd">    C_r = π / (2 · ω_r · Z0)        [effective capacitance]</span>
+<span class="sd">    L_r = 1 / (ω_r² · C_r)          [effective inductance]</span>
+
+<span class="sd">where ω_r = 2π f_r is the angular resonance frequency and Z0 is the</span>
+<span class="sd">characteristic impedance of the CPW line.</span>
+
+<span class="sd">This is the simplest of the three methods — no optimisation, no network</span>
+<span class="sd">simulation, just two formulas.  It is fast and useful as a sanity check</span>
+<span class="sd">or initial guess, but it ignores the loading from coupling capacitors and</span>
+<span class="sd">ground capacitors.</span>
+
+<span class="sd">Reference: standard microwave engineering result, see e.g. Pozar §6.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.lc</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">,</span>
+    <span class="n">lc_resonator_network_2port</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="AnalyticalFit">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.AnalyticalFit">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AnalyticalFit</span><span class="p">(</span><span class="n">BaseFit</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lumped LC model via the closed-form λ/2 CPW approximation.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    mode : int, optional</span>
+<span class="sd">        Resonance mode number (default 2 for the fundamental λ/2 mode).</span>
+<span class="sd">        The formula C_r = m·π / (2·ω_r·Z0) generalises to higher modes.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    L : float or None</span>
+<span class="sd">        Effective inductance in Henries.  None before fit().</span>
+<span class="sd">    C : float or None</span>
+<span class="sd">        Effective capacitance in Farads.  None before fit().</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    ::</span>
+
+<span class="sd">        from simpleLOMs.models.analytical import AnalyticalFit</span>
+<span class="sd">        import skrf as rf</span>
+
+<span class="sd">        freq  = rf.Frequency(4e9, 10e9, 10_001, unit=&quot;Hz&quot;)</span>
+<span class="sd">        model = AnalyticalFit()</span>
+
+<span class="sd">        # Provide f_r and Z0 directly — no network needed</span>
+<span class="sd">        model.fit(freq, f_r=8.581e9, Z0=45.926)</span>
+
+<span class="sd">        print(model.get_params())</span>
+<span class="sd">        # {&#39;L&#39;: 5.55e-10, &#39;C&#39;: 6.18e-13, &#39;f_r_Hz&#39;: 8.581e9, &#39;Z0&#39;: 45.926}</span>
+
+<span class="sd">        net = model.get_network(freq, Cc1=5e-15, Cc2=5e-15,</span>
+<span class="sd">                                Ctog1=1e-14, Ctog2=1e-14)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span><span class="p">:</span> <span class="nb">int</span>           <span class="o">=</span> <span class="n">mode</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">:</span>    <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>  <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">:</span>    <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>  <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_f_r_hz</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_Z0</span><span class="p">:</span>     <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># fit()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="AnalyticalFit.fit">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.AnalyticalFit.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+        <span class="n">f_r</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute L and C from the closed-form λ/2 approximation.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : rf.Frequency</span>
+<span class="sd">            Frequency sweep (not used in the calculation itself, but kept</span>
+<span class="sd">            for a consistent BaseFit interface).</span>
+<span class="sd">        f_r : float</span>
+<span class="sd">            Resonance frequency in Hz.</span>
+<span class="sd">        Z0 : float</span>
+<span class="sd">            Characteristic impedance of the CPW line in Ohms.</span>
+<span class="sd">        **kwargs</span>
+<span class="sd">            Ignored.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">w_r</span>  <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f_r</span>
+        <span class="n">C_r</span>  <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">*</span> <span class="n">w_r</span> <span class="o">*</span> <span class="n">Z0</span><span class="p">)</span>
+        <span class="n">L_r</span>  <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">w_r</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">C_r</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">&quot;AnalyticalFit: f_r=</span><span class="si">%.4f</span><span class="s2"> GHz, Z0=</span><span class="si">%.3f</span><span class="s2"> Ω → C=</span><span class="si">%.4e</span><span class="s2"> F, L=</span><span class="si">%.4e</span><span class="s2"> H&quot;</span><span class="p">,</span>
+            <span class="n">f_r</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span> <span class="n">Z0</span><span class="p">,</span> <span class="n">C_r</span><span class="p">,</span> <span class="n">L_r</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span>      <span class="o">=</span> <span class="n">C_r</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span>      <span class="o">=</span> <span class="n">L_r</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_f_r_hz</span> <span class="o">=</span> <span class="n">f_r</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_Z0</span>     <span class="o">=</span> <span class="n">Z0</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># get_network()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="AnalyticalFit.get_network">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.AnalyticalFit.get_network">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_network</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">freq</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Cc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+        <span class="n">with_grounds</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">Ctog2</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build the 2-port LC LOM network from the analytical L and C.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : rf.Frequency</span>
+<span class="sd">        Cc1, Cc2 : float</span>
+<span class="sd">            Coupling capacitances in Farads.</span>
+<span class="sd">        Z0 : float</span>
+<span class="sd">            Reference impedance in Ohms.</span>
+<span class="sd">        with_grounds : bool</span>
+<span class="sd">            If True (default), include Ctog shunt capacitors.  The</span>
+<span class="sd">            analytical model is typically compared alongside the full</span>
+<span class="sd">            CPW topology so including the grounds is more representative.</span>
+<span class="sd">        Ctog1, Ctog2 : float or None</span>
+<span class="sd">            Required when with_grounds=True.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        rf.Network</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fitted</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">with_grounds</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">Ctog1</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">Ctog2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Ctog1 and Ctog2 must be provided when with_grounds=True.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">(</span>
+                <span class="n">Leff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+                <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+                <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+                <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">lc_resonator_network_2port</span><span class="p">(</span>
+            <span class="n">Leff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># get_params()</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="AnalyticalFit.get_params">
+<a class="viewcode-back" href="../../../api.html#simpleLOMs.AnalyticalFit.get_params">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_params</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the analytically computed parameters.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Keys: &quot;L&quot; (H), &quot;C&quot; (F), &quot;f_r_Hz&quot;, &quot;Z0&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fitted</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;L&quot;</span><span class="p">:</span>      <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span>
+            <span class="s2">&quot;C&quot;</span><span class="p">:</span>      <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span>
+            <span class="s2">&quot;f_r_Hz&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_f_r_hz</span><span class="p">,</span>
+            <span class="s2">&quot;Z0&quot;</span><span class="p">:</span>     <span class="bp">self</span><span class="o">.</span><span class="n">_Z0</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_fitted</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;AnalyticalFit(L=</span><span class="si">{:.4e}</span><span class="s2"> H, C=</span><span class="si">{:.4e}</span><span class="s2"> F, f_r=</span><span class="si">{:.4f}</span><span class="s2"> GHz)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_f_r_hz</span> <span class="o">/</span> <span class="mf">1e9</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;AnalyticalFit(unfitted)&quot;</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../../index.html">
+              <img class="logo" src="../../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation index</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

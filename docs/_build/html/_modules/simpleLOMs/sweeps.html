@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simpleLOMs.sweeps &#8212; simpleLOMs</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d7e2fa82" />
+    <link rel="stylesheet" type="text/css" href="../../_static/nameko.css?v=2296cfae" />
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="icon" href="../../_static/logo.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+  </head><body>
+  
+  
+
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">simpleLOMs</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">simpleLOMs.sweeps</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for simpleLOMs.sweeps</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">sweeps.py</span>
+<span class="sd">---------</span>
+<span class="sd">Parameter sweep infrastructure for simpleLOMs.</span>
+
+<span class="sd">The central idea is a SweepConfig dataclass that holds a complete snapshot</span>
+<span class="sd">of a device (geometry, circuit parameters, frequency sweep).  A sweep then</span>
+<span class="sd">replaces one field at a time using dataclasses.replace(), which returns a</span>
+<span class="sd">new config with everything else held fixed — no mutation, no side effects.</span>
+
+<span class="sd">Typical usage</span>
+<span class="sd">-------------</span>
+<span class="sd">    from simpleLOMs.sweeps import SweepConfig, sweep_length, sweep_coupling</span>
+
+<span class="sd">    base = SweepConfig(</span>
+<span class="sd">        cpw_params=CPWParams(),</span>
+<span class="sd">        freq=rf.Frequency(4e9, 12e9, 10_001, unit=&quot;Hz&quot;),</span>
+<span class="sd">        d=7e-3,</span>
+<span class="sd">        Cc1=5e-15, Cc2=5e-15,</span>
+<span class="sd">        Ctog1=1e-14, Ctog2=1e-14,</span>
+<span class="sd">        Lload1=5e-10, Cload1=6e-13,</span>
+<span class="sd">        Lload2=5e-10, Cload2=6e-13,</span>
+<span class="sd">    )</span>
+
+<span class="sd">    # Sweep resonator length, extract f0 and kappa from CPW (default)</span>
+<span class="sd">    df = sweep_length(np.linspace(5e-3, 10e-3, 20), base,</span>
+<span class="sd">                      extract=[&quot;f0_s11&quot;, &quot;kappa_s11&quot;])</span>
+
+<span class="sd">    # Sweep coupling cap using the already-fitted Foster model</span>
+<span class="sd">    df = sweep_coupling(np.linspace(1e-15, 20e-15, 30), base,</span>
+<span class="sd">                        model=&quot;foster&quot;, extract=[&quot;f0_s11&quot;, &quot;kappa_s11&quot;, &quot;Q_s11&quot;])</span>
+
+<span class="sd">Default model options</span>
+<span class="sd">-------------</span>
+<span class="sd">&quot;cpw&quot;        Built from scratch at every sweep point.  Ground truth.</span>
+<span class="sd">&quot;foster&quot;     FosterFit.  Re-fit when d changes; reuses L/C otherwise (fast).</span>
+<span class="sd">&quot;optimized&quot;  OptimizedFit.  Re-fit when d changes; reuses L/C otherwise.</span>
+<span class="sd">&quot;analytical&quot; AnalyticalFit.  Re-fit at every point (formula is instant).</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPWParams</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.analysis</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">resonance</span><span class="p">,</span>
+    <span class="n">resonances_from_s</span><span class="p">,</span>
+    <span class="n">fwhm_from_trace_db</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.cpw</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">cpw_resonator_network_2port</span><span class="p">,</span>
+    <span class="n">cpw_resonator_loaded_network_2port</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.lc</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">,</span>
+    <span class="n">lc_resonator_loaded_network_with_grounds_2port</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.foster_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">FosterFit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.optimized_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">OptimizedFit</span><span class="p">,</span> <span class="n">OptimizationConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.analytical_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticalFit</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># SweepConfig</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="SweepConfig">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.SweepConfig">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SweepConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A complete snapshot of a device and its operating conditions.</span>
+
+<span class="sd">    Every parameter that any sweep might want to vary is a field here.</span>
+<span class="sd">    The sweep machinery calls dataclasses.replace(config, field=new_value)</span>
+<span class="sd">    to create a modified copy at each sweep point — the original is never</span>
+<span class="sd">    mutated.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cpw_params : CPWParams</span>
+<span class="sd">        Physical geometry of the CPW line.</span>
+<span class="sd">    freq : rf.Frequency</span>
+<span class="sd">        Frequency sweep used for network construction.</span>
+<span class="sd">        Should be wide enough to contain all resonances of interest.</span>
+<span class="sd">    d : float</span>
+<span class="sd">        Resonator length in metres.</span>
+<span class="sd">    Cc1, Cc2 : float</span>
+<span class="sd">        Coupling capacitances in Farads.</span>
+<span class="sd">    Ctog1, Ctog2 : float</span>
+<span class="sd">        Shunt-to-ground capacitances in Farads.</span>
+<span class="sd">    Lload1, Cload1 : float</span>
+<span class="sd">        Inductance (H) and capacitance (F) of the load on port 1 side.</span>
+<span class="sd">    Lload2, Cload2 : float</span>
+<span class="sd">        Inductance (H) and capacitance (F) of the load on port 2 side.</span>
+<span class="sd">    Z0 : float</span>
+<span class="sd">        Reference impedance in Ohms (default 50 Ω).</span>
+<span class="sd">    analytical_Z0 : float or None</span>
+<span class="sd">        Characteristic impedance used in the AnalyticalFit formula.</span>
+<span class="sd">        If None, Z0 is used.</span>
+<span class="sd">    opt_config : OptimizationConfig or None</span>
+<span class="sd">        Hyperparameters for OptimizedFit.  Uses defaults if None.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Creating a base config::</span>
+
+<span class="sd">        base = SweepConfig(</span>
+<span class="sd">            cpw_params=CPWParams(),</span>
+<span class="sd">            freq=rf.Frequency(4e9, 12e9, 10_001, unit=&quot;Hz&quot;),</span>
+<span class="sd">            d=7e-3,</span>
+<span class="sd">            Cc1=5e-15, Cc2=5e-15,</span>
+<span class="sd">            Ctog1=1e-14, Ctog2=1e-14,</span>
+<span class="sd">            Lload1=5e-10, Cload1=6e-13,</span>
+<span class="sd">            Lload2=5e-10, Cload2=6e-13,</span>
+<span class="sd">        )</span>
+
+<span class="sd">    Manually overriding one field::</span>
+
+<span class="sd">        longer = dataclasses.replace(base, d=9e-3)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cpw_params</span><span class="p">:</span>    <span class="n">CPWParams</span>
+    <span class="n">freq</span><span class="p">:</span>          <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span>
+    <span class="n">d</span><span class="p">:</span>             <span class="nb">float</span>
+    <span class="n">Cc1</span><span class="p">:</span>           <span class="nb">float</span>
+    <span class="n">Cc2</span><span class="p">:</span>           <span class="nb">float</span>
+    <span class="n">Ctog1</span><span class="p">:</span>         <span class="nb">float</span>
+    <span class="n">Ctog2</span><span class="p">:</span>         <span class="nb">float</span>
+    <span class="n">Lload1</span><span class="p">:</span>        <span class="nb">float</span>
+    <span class="n">Cload1</span><span class="p">:</span>        <span class="nb">float</span>
+    <span class="n">Lload2</span><span class="p">:</span>        <span class="nb">float</span>
+    <span class="n">Cload2</span><span class="p">:</span>        <span class="nb">float</span>
+    <span class="n">Z0</span><span class="p">:</span>            <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span>
+    <span class="n">analytical_Z0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">opt_config</span><span class="p">:</span>    <span class="n">OptimizationConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Parameters that require a model refit when they change</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="c1"># These are the fields that change the resonator&#39;s L and C.</span>
+<span class="c1"># Any sweep over these parameters must re-fit the model at every point.</span>
+<span class="c1"># Sweeps over the remaining parameters (Cc, Ctog, loads) can reuse L/C.</span>
+<span class="n">_REFIT_PARAMS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;d&quot;</span><span class="p">,</span> <span class="s2">&quot;cpw_params&quot;</span><span class="p">}</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Internal: build a network from a config + fitted L/C (or CPW directly)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_2port_network</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">L</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">C</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build a 2-port network from cfg.</span>
+
+<span class="sd">    For &quot;cpw&quot;, builds directly from the CPW transmission line model.</span>
+<span class="sd">    For the three LC models, uses the supplied L and C values with the</span>
+<span class="sd">    &quot;with_grounds&quot; topology (Ctog1/Ctog2 included).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cfg : SweepConfig</span>
+<span class="sd">    model : str</span>
+<span class="sd">        One of &quot;cpw&quot;, &quot;foster&quot;, &quot;optimized&quot;, &quot;analytical&quot;.</span>
+<span class="sd">    L, C : float or None</span>
+<span class="sd">        Pre-fitted inductance and capacitance.  Ignored for &quot;cpw&quot;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rf.Network</span>
+<span class="sd">        2-port network evaluated on cfg.freq.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+            <span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">d</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">cpw_params</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">L</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">C</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;L and C must be provided for LC model &#39;</span><span class="si">{}</span><span class="s2">&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">model</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">lc_resonator_network_with_grounds_2port</span><span class="p">(</span>
+        <span class="n">Leff</span><span class="o">=</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">freq</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_loaded_2port_network</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">L</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">C</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build a 2-port loaded network (with LC loads on each port side).</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">freq_loaded</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="mf">1e9</span><span class="p">,</span> <span class="mf">15e9</span><span class="p">,</span> <span class="mi">400_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">cpw_resonator_loaded_network_2port</span><span class="p">(</span>
+            <span class="n">freq_loaded</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">d</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">Ctog1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">Lload1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cload1</span><span class="p">,</span>
+            <span class="n">Lload2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cload2</span><span class="p">,</span>
+            <span class="n">cpw_params</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">L</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">C</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;L and C must be provided for LC model &#39;</span><span class="si">{}</span><span class="s2">&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">model</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">lc_resonator_loaded_network_with_grounds_2port</span><span class="p">(</span>
+        <span class="n">Leff</span><span class="o">=</span><span class="n">L</span><span class="p">,</span> <span class="n">Ceff</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
+        <span class="n">Cc1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span>
+        <span class="n">Ctog1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+        <span class="n">Lload1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cload1</span><span class="p">,</span>
+        <span class="n">Lload2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cload2</span><span class="p">,</span>
+        <span class="n">freq</span><span class="o">=</span><span class="n">freq_loaded</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Internal: fit a model and return (L, C)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fit_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fit the chosen model on cfg and return (L, C).</span>
+
+<span class="sd">    For &quot;cpw&quot; this is never called — CPW has no L/C to fit.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;foster&quot;</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">FosterFit</span><span class="p">(</span><span class="n">cpw_params</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">)</span>
+        <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">d</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">C</span>
+
+    <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;optimized&quot;</span><span class="p">:</span>
+        <span class="n">cpw_net</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+            <span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">d</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">cpw_params</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">opt_cfg</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">opt_config</span> <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">opt_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">OptimizationConfig</span><span class="p">()</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">OptimizedFit</span><span class="p">(</span><span class="n">config</span><span class="o">=</span><span class="n">opt_cfg</span><span class="p">)</span>
+        <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+            <span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span>
+            <span class="n">data_ntw</span><span class="o">=</span><span class="n">cpw_net</span><span class="p">,</span>
+            <span class="n">Cc1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span>
+            <span class="n">Ctog1</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">d</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">d</span><span class="p">,</span> <span class="n">cpw_params</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">,</span>
+            <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">C</span>
+
+    <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;analytical&quot;</span><span class="p">:</span>
+        <span class="n">cpw_net</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+            <span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">d</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Ctog2</span><span class="p">,</span>
+            <span class="n">cpw_params</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">f0</span> <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">cpw_net</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">Z0_analytical</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">analytical_Z0</span> <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">analytical_Z0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Z0</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">AnalyticalFit</span><span class="p">()</span>
+        <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">f_r</span><span class="o">=</span><span class="n">f0</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0_analytical</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">C</span>
+
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unknown model &#39;</span><span class="si">{}</span><span class="s2">&#39;. Choose: cpw, foster, optimized, analytical.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">model</span><span class="p">))</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Internal: extract quantities from a network</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract</span><span class="p">(</span>
+    <span class="n">net_2port</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span>
+    <span class="n">net_loaded</span><span class="p">:</span> <span class="n">rf</span><span class="o">.</span><span class="n">Network</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">quantities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Extract a set of named scalar quantities from a pair of networks.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    net_2port : rf.Network</span>
+<span class="sd">        The unloaded 2-port network (for f0, kappa, Q).</span>
+<span class="sd">    net_loaded : rf.Network or None</span>
+<span class="sd">        The loaded 2-port network (for shift_modeN).</span>
+<span class="sd">        Built lazily — only if a shift quantity is requested.</span>
+<span class="sd">    quantities : list of str</span>
+<span class="sd">        Names of quantities to extract.  See the table in sweep() docstring.</span>
+<span class="sd">    cfg : SweepConfig</span>
+<span class="sd">        Used to compute bare load resonance frequencies for shift calculations.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict mapping quantity name → float value</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># Bare load frequencies — needed for shift calculations</span>
+    <span class="n">f0_load1</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">Lload1</span> <span class="o">*</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cload1</span><span class="p">))</span>
+    <span class="n">f0_load2</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">Lload2</span> <span class="o">*</span> <span class="n">cfg</span><span class="o">.</span><span class="n">Cload2</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">quantities</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">q</span> <span class="o">==</span> <span class="s2">&quot;f0_s11&quot;</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>
+
+            <span class="k">elif</span> <span class="n">q</span> <span class="o">==</span> <span class="s2">&quot;f0_s22&quot;</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>
+
+            <span class="k">elif</span> <span class="n">q</span> <span class="o">==</span> <span class="s2">&quot;kappa_s11&quot;</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">fwhm_from_trace_db</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;dip&quot;</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e6</span>
+
+            <span class="k">elif</span> <span class="n">q</span> <span class="o">==</span> <span class="s2">&quot;kappa_s22&quot;</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">fwhm_from_trace_db</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;dip&quot;</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e6</span>
+
+            <span class="k">elif</span> <span class="n">q</span> <span class="o">==</span> <span class="s2">&quot;Q_s11&quot;</span><span class="p">:</span>
+                <span class="n">f0</span>  <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">bw</span>  <span class="o">=</span> <span class="n">fwhm_from_trace_db</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;dip&quot;</span><span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">f0</span> <span class="o">/</span> <span class="n">bw</span> <span class="k">if</span> <span class="n">bw</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+            <span class="k">elif</span> <span class="n">q</span> <span class="o">==</span> <span class="s2">&quot;Q_s22&quot;</span><span class="p">:</span>
+                <span class="n">f0</span>  <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">bw</span>  <span class="o">=</span> <span class="n">fwhm_from_trace_db</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;dip&quot;</span><span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">f0</span> <span class="o">/</span> <span class="n">bw</span> <span class="k">if</span> <span class="n">bw</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+            <span class="k">elif</span> <span class="n">q</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;shift_mode1&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode2&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode3&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">net_loaded</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+                    <span class="k">continue</span>
+                <span class="n">mode_idx</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">q</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="mi">1</span>   <span class="c1"># 0, 1, or 2</span>
+                <span class="n">shifted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">resonances_from_s</span><span class="p">(</span><span class="n">net_loaded</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="n">f0_res</span> <span class="o">=</span> <span class="n">resonance</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>
+                <span class="n">bare</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">([</span><span class="n">f0_load1</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span> <span class="n">f0_res</span><span class="p">,</span> <span class="n">f0_load2</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">mode_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">shifted</span><span class="p">)</span> <span class="ow">and</span> <span class="n">mode_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">bare</span><span class="p">):</span>
+                    <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">bare</span><span class="p">[</span><span class="n">mode_idx</span><span class="p">]</span> <span class="o">-</span> <span class="n">shifted</span><span class="p">[</span><span class="n">mode_idx</span><span class="p">]))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Unknown extract quantity &#39;</span><span class="si">{}</span><span class="s2">&#39; — skipped.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to extract &#39;</span><span class="si">%s</span><span class="s2">&#39;: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Core sweep() function</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="n">_VALID_MODELS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cpw&quot;</span><span class="p">,</span> <span class="s2">&quot;foster&quot;</span><span class="p">,</span> <span class="s2">&quot;optimized&quot;</span><span class="p">,</span> <span class="s2">&quot;analytical&quot;</span><span class="p">}</span>
+
+<span class="n">_SHIFT_QUANTITIES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;shift_mode1&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode2&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode3&quot;</span><span class="p">}</span>
+
+
+<div class="viewcode-block" id="sweep">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.sweep">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sweep</span><span class="p">(</span>
+    <span class="n">param</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">base_config</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+    <span class="n">extract</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpw&quot;</span><span class="p">,</span>
+    <span class="n">refit</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Sweep a single parameter across a range of values and extract quantities.</span>
+
+<span class="sd">    At each sweep point, the chosen model is either rebuilt from scratch</span>
+<span class="sd">    (for CPW or when the swept parameter changes L/C) or reuses the L/C</span>
+<span class="sd">    fitted at the first sweep point (for Cc, Ctog, and load parameters).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    param : str</span>
+<span class="sd">        Name of the SweepConfig field to vary.  Must be an attribute of</span>
+<span class="sd">        SweepConfig, e.g. &quot;d&quot;, &quot;Cc1&quot;, &quot;Cc2&quot;, &quot;Ctog1&quot;, &quot;Lload1&quot;, &quot;Cload1&quot;.</span>
+<span class="sd">        Use &quot;Lload1_Lload2&quot; or &quot;Cload1_Cload2&quot; to sweep both loads together.</span>
+<span class="sd">    values : np.ndarray</span>
+<span class="sd">        Array of values for the swept parameter.</span>
+<span class="sd">    base_config : SweepConfig</span>
+<span class="sd">        Fixed device state.  Not mutated.</span>
+<span class="sd">    extract : list of str</span>
+<span class="sd">        Quantities to compute at each sweep point.  Supported values:</span>
+
+<span class="sd">        ============== ================================================</span>
+<span class="sd">        &quot;f0_s11&quot;       S11 resonance frequency (GHz)</span>
+<span class="sd">        &quot;f0_s22&quot;       S22 resonance frequency (GHz)</span>
+<span class="sd">        &quot;kappa_s11&quot;    S11 linewidth / FWHM (MHz)</span>
+<span class="sd">        &quot;kappa_s22&quot;    S22 linewidth / FWHM (MHz)</span>
+<span class="sd">        &quot;Q_s11&quot;        Quality factor from S11 = f0 / kappa</span>
+<span class="sd">        &quot;Q_s22&quot;        Quality factor from S22</span>
+<span class="sd">        ============== ================================================</span>
+
+<span class="sd">    model : str</span>
+<span class="sd">        Which model to use: &quot;cpw&quot; (default), &quot;foster&quot;, &quot;optimized&quot;,</span>
+<span class="sd">        or &quot;analytical&quot;.</span>
+<span class="sd">    refit : bool or None</span>
+<span class="sd">        Whether to re-fit the LC model at every sweep point.</span>
+<span class="sd">        None (default) means automatic: refit when sweeping a parameter</span>
+<span class="sd">        in {d, cpw_params}, reuse L/C otherwise.</span>
+<span class="sd">        Setting refit=True forces refitting at every point (slower but</span>
+<span class="sd">        safer when sweeping Cc1/Cc2 with OptimizedFit).</span>
+<span class="sd">        Setting refit=False always reuses the first-point L/C (fastest).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        One row per sweep point.  Columns are the swept parameter value</span>
+<span class="sd">        plus all requested extract quantities.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Sweep resonator length with CPW ground truth::</span>
+
+<span class="sd">        df = sweep(&quot;d&quot;, np.linspace(5e-3, 10e-3, 20), base,</span>
+<span class="sd">                   extract=[&quot;f0_s11&quot;, &quot;kappa_s11&quot;])</span>
+
+<span class="sd">    Sweep coupling cap with FosterFit (reuses L/C — fast)::</span>
+
+<span class="sd">        df = sweep(&quot;Cc1&quot;, np.linspace(1e-15, 20e-15, 30), base,</span>
+<span class="sd">                   extract=[&quot;f0_s11&quot;, &quot;kappa_s11&quot;, &quot;Q_s11&quot;],</span>
+<span class="sd">                   model=&quot;foster&quot;)</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_VALID_MODELS</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;model must be one of </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">_VALID_MODELS</span><span class="p">))</span>
+
+    <span class="c1"># Determine whether to refit at each point</span>
+    <span class="n">_needs_refit</span> <span class="o">=</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">_REFIT_PARAMS</span> <span class="k">if</span> <span class="n">refit</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">refit</span>
+    <span class="c1"># CPW always rebuilds from scratch — no concept of &quot;refit&quot;</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>
+        <span class="n">_needs_refit</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="n">needs_loaded</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">_SHIFT_QUANTITIES</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">extract</span><span class="p">))</span>
+
+    <span class="c1"># --- Fit once at the first sweep point if we can reuse L/C ---</span>
+    <span class="n">L_cached</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">C_cached</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">model</span> <span class="o">!=</span> <span class="s2">&quot;cpw&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_needs_refit</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;sweep: fitting </span><span class="si">%s</span><span class="s2"> once on base_config (refit=False)&quot;</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+        <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span> <span class="o">=</span> <span class="n">_fit_model</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">values</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;sweep point </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2">: </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">param</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+
+        <span class="c1"># Build the modified config for this sweep point</span>
+        <span class="c1"># Handle the &quot;Lload1_Lload2&quot; and &quot;Cload1_Cload2&quot; shorthand</span>
+        <span class="k">if</span> <span class="n">param</span> <span class="o">==</span> <span class="s2">&quot;Lload1_Lload2&quot;</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">Lload1</span><span class="o">=</span><span class="n">val</span><span class="p">,</span> <span class="n">Lload2</span><span class="o">=</span><span class="n">val</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">param</span> <span class="o">==</span> <span class="s2">&quot;Cload1_Cload2&quot;</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">val</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">val</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="o">**</span><span class="p">{</span><span class="n">param</span><span class="p">:</span> <span class="n">val</span><span class="p">})</span>
+
+        <span class="c1"># Fit or reuse</span>
+        <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>
+            <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">_needs_refit</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">_fit_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;sweep point </span><span class="si">%d</span><span class="s2">: fit failed (</span><span class="si">%s</span><span class="s2">), skipping.&quot;</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="n">param</span><span class="p">:</span> <span class="n">val</span><span class="p">}</span>
+                <span class="n">row</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">q</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">extract</span><span class="p">})</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+                <span class="k">continue</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span>
+
+        <span class="c1"># Build networks</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">net_2port</span> <span class="o">=</span> <span class="n">_build_2port_network</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+            <span class="n">net_loaded</span> <span class="o">=</span> <span class="n">_build_loaded_2port_network</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span> <span class="k">if</span> <span class="n">needs_loaded</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;sweep point </span><span class="si">%d</span><span class="s2">: network build failed (</span><span class="si">%s</span><span class="s2">), skipping.&quot;</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="n">param</span><span class="p">:</span> <span class="n">val</span><span class="p">}</span>
+            <span class="n">row</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">q</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">extract</span><span class="p">})</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Extract quantities</span>
+        <span class="n">extracted</span> <span class="o">=</span> <span class="n">_extract</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="n">net_loaded</span><span class="p">,</span> <span class="n">extract</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="n">param</span><span class="p">:</span> <span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">extracted</span><span class="p">}</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Convenience wrappers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="sweep_length">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.sweep_length">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sweep_length</span><span class="p">(</span>
+    <span class="n">d_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">base_config</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+    <span class="n">extract</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpw&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Sweep resonator length d.</span>
+
+<span class="sd">    Always refits the model at every point because d directly sets L and C.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    d_values : np.ndarray</span>
+<span class="sd">        Array of resonator lengths in metres.</span>
+<span class="sd">    base_config : SweepConfig</span>
+<span class="sd">    extract : list of str, optional</span>
+<span class="sd">        Defaults to [&quot;f0_s11&quot;, &quot;kappa_s11&quot;] if not provided.</span>
+<span class="sd">    model : str</span>
+<span class="sd">        &quot;cpw&quot; (default), &quot;foster&quot;, &quot;optimized&quot;, or &quot;analytical&quot;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Columns: &quot;d&quot;, plus all extract quantities.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">extract</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">extract</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa_s11&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">sweep</span><span class="p">(</span><span class="s2">&quot;d&quot;</span><span class="p">,</span> <span class="n">d_values</span><span class="p">,</span> <span class="n">base_config</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="n">extract</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="sweep_coupling">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.sweep_coupling">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sweep_coupling</span><span class="p">(</span>
+    <span class="n">Cc_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">base_config</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+    <span class="n">extract</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpw&quot;</span><span class="p">,</span>
+    <span class="n">symmetric</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">refit</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Sweep coupling capacitor(s).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Cc_values : np.ndarray</span>
+<span class="sd">        Array of coupling capacitance values in Farads.</span>
+<span class="sd">    base_config : SweepConfig</span>
+<span class="sd">    extract : list of str, optional</span>
+<span class="sd">        Defaults to [&quot;f0_s11&quot;, &quot;kappa_s11&quot;, &quot;Q_s11&quot;] if not provided.</span>
+<span class="sd">    model : str</span>
+<span class="sd">        &quot;cpw&quot; (default), &quot;foster&quot;, &quot;optimized&quot;, or &quot;analytical&quot;.</span>
+<span class="sd">    symmetric : bool</span>
+<span class="sd">        If True (default), sweeps Cc1 and Cc2 together.</span>
+<span class="sd">        If False, sweeps only Cc1 and leaves Cc2 fixed.</span>
+<span class="sd">    refit : bool</span>
+<span class="sd">        Whether to re-fit the LC model at every point.  Default False</span>
+<span class="sd">        because Cc does not change L or C — reusing is valid and fast.</span>
+<span class="sd">        Set to True if you suspect OptimizedFit is sensitive to Cc during</span>
+<span class="sd">        Stage 1 (unlikely but possible for very asymmetric coupling).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Columns: &quot;Cc&quot; (the swept value), plus all extract quantities.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">extract</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">extract</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa_s11&quot;</span><span class="p">,</span> <span class="s2">&quot;Q_s11&quot;</span><span class="p">]</span>
+
+    <span class="n">param</span> <span class="o">=</span> <span class="s2">&quot;Cc1&quot;</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">symmetric</span> <span class="k">else</span> <span class="s2">&quot;Cc1&quot;</span>   <span class="c1"># handled below via manual loop for symmetric case</span>
+
+    <span class="k">if</span> <span class="n">symmetric</span><span class="p">:</span>
+        <span class="c1"># Both Cc1 and Cc2 move together — use the manual loop path</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">model</span> <span class="o">!=</span> <span class="s2">&quot;cpw&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">refit</span><span class="p">:</span>
+            <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span> <span class="o">=</span> <span class="n">_fit_model</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">Cc_values</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">val</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">val</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>
+                <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+            <span class="k">elif</span> <span class="n">refit</span><span class="p">:</span>
+                <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">_fit_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span>
+
+            <span class="n">needs_loaded</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">_SHIFT_QUANTITIES</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">extract</span><span class="p">))</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">net_2port</span>  <span class="o">=</span> <span class="n">_build_2port_network</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+                <span class="n">net_loaded</span> <span class="o">=</span> <span class="n">_build_loaded_2port_network</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span> <span class="k">if</span> <span class="n">needs_loaded</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;sweep_coupling: build failed at Cc=</span><span class="si">%.2e</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="n">val</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Cc&quot;</span><span class="p">:</span> <span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="p">{</span><span class="n">q</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">extract</span><span class="p">}}</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">extracted</span> <span class="o">=</span> <span class="n">_extract</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="n">net_loaded</span><span class="p">,</span> <span class="n">extract</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;Cc&quot;</span><span class="p">:</span> <span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">extracted</span><span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">sweep</span><span class="p">(</span><span class="s2">&quot;Cc1&quot;</span><span class="p">,</span> <span class="n">Cc_values</span><span class="p">,</span> <span class="n">base_config</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="n">extract</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span> <span class="n">refit</span><span class="o">=</span><span class="n">refit</span><span class="p">)</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Cc1&quot;</span><span class="p">:</span> <span class="s2">&quot;Cc&quot;</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">df</span></div>
+
+
+
+<div class="viewcode-block" id="sweep_load_frequency">
+<a class="viewcode-back" href="../../api.html#simpleLOMs.sweep_load_frequency">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sweep_load_frequency</span><span class="p">(</span>
+    <span class="n">f_load_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">base_config</span><span class="p">:</span> <span class="n">SweepConfig</span><span class="p">,</span>
+    <span class="n">extract</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpw&quot;</span><span class="p">,</span>
+    <span class="n">side</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;both&quot;</span><span class="p">,</span>
+    <span class="n">load_impedance</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50.0</span><span class="p">,</span>
+    <span class="n">refit</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Sweep the bare load resonance frequency.</span>
+
+<span class="sd">    Converts each target frequency to a (L, C) pair by fixing the load</span>
+<span class="sd">    characteristic impedance Z_load = sqrt(L/C), then sweeping C = 1/(ω²L).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    f_load_values : np.ndarray</span>
+<span class="sd">        Array of target load resonance frequencies in Hz.</span>
+<span class="sd">    base_config : SweepConfig</span>
+<span class="sd">    extract : list of str, optional</span>
+<span class="sd">        Defaults to [&quot;f0_s11&quot;, &quot;shift_mode1&quot;, &quot;shift_mode2&quot;, &quot;shift_mode3&quot;].</span>
+<span class="sd">    model : str</span>
+<span class="sd">        &quot;cpw&quot; (default), &quot;foster&quot;, &quot;optimized&quot;, or &quot;analytical&quot;.</span>
+<span class="sd">    side : {&quot;both&quot;, &quot;1&quot;, &quot;2&quot;}</span>
+<span class="sd">        Which load to sweep.  &quot;both&quot; sweeps load 1 and load 2 together</span>
+<span class="sd">        (useful when the two loads are identical, e.g. symmetric qubits).</span>
+<span class="sd">    load_impedance : float</span>
+<span class="sd">        Characteristic impedance of the load resonator in Ohms.</span>
+<span class="sd">        Used to fix L from Z_load = sqrt(L/C) → L = Z_load / ω₀.</span>
+<span class="sd">        Default 50 Ω.</span>
+<span class="sd">    refit : bool</span>
+<span class="sd">        Whether to re-fit the LC model at every point.  Default False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Columns: &quot;f_load_GHz&quot; (the swept load frequency in GHz),</span>
+<span class="sd">        &quot;Lload&quot; (H), &quot;Cload&quot; (F), plus all extract quantities.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">extract</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">extract</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;f0_s11&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode1&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode2&quot;</span><span class="p">,</span> <span class="s2">&quot;shift_mode3&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">side</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;both&quot;</span><span class="p">,</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span> <span class="s2">&quot;2&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;side must be &#39;both&#39;, &#39;1&#39;, or &#39;2&#39;.&quot;</span><span class="p">)</span>
+
+    <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="o">!=</span> <span class="s2">&quot;cpw&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">refit</span><span class="p">:</span>
+        <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span> <span class="o">=</span> <span class="n">_fit_model</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+
+    <span class="n">needs_loaded</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">_SHIFT_QUANTITIES</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">extract</span><span class="p">))</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">f_load</span> <span class="ow">in</span> <span class="n">f_load_values</span><span class="p">:</span>
+        <span class="n">w_load</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f_load</span>
+        <span class="c1"># Fix Z_load = sqrt(L/C) → L = Z_load / w_load, C = 1 / (w_load * Z_load)</span>
+        <span class="n">L_load</span> <span class="o">=</span> <span class="n">load_impedance</span> <span class="o">/</span> <span class="n">w_load</span>
+        <span class="n">C_load</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">w_load</span> <span class="o">*</span> <span class="n">load_impedance</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">side</span> <span class="o">==</span> <span class="s2">&quot;both&quot;</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+                <span class="n">base_config</span><span class="p">,</span>
+                <span class="n">Lload1</span><span class="o">=</span><span class="n">L_load</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">C_load</span><span class="p">,</span>
+                <span class="n">Lload2</span><span class="o">=</span><span class="n">L_load</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">C_load</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">side</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">Lload1</span><span class="o">=</span><span class="n">L_load</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">C_load</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cfg</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">base_config</span><span class="p">,</span> <span class="n">Lload2</span><span class="o">=</span><span class="n">L_load</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">C_load</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>
+            <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">refit</span><span class="p">:</span>
+            <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">_fit_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">L_cached</span><span class="p">,</span> <span class="n">C_cached</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">net_2port</span>  <span class="o">=</span> <span class="n">_build_2port_network</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+            <span class="n">net_loaded</span> <span class="o">=</span> <span class="n">_build_loaded_2port_network</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span> <span class="k">if</span> <span class="n">needs_loaded</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;sweep_load_frequency: build failed at f=</span><span class="si">%.4f</span><span class="s2"> GHz (</span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="n">f_load</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;f_load_GHz&quot;</span><span class="p">:</span> <span class="n">f_load</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span>
+                <span class="s2">&quot;Lload&quot;</span><span class="p">:</span> <span class="n">L_load</span><span class="p">,</span> <span class="s2">&quot;Cload&quot;</span><span class="p">:</span> <span class="n">C_load</span><span class="p">,</span>
+                <span class="o">**</span><span class="p">{</span><span class="n">q</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">extract</span><span class="p">},</span>
+            <span class="p">}</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">extracted</span> <span class="o">=</span> <span class="n">_extract</span><span class="p">(</span><span class="n">net_2port</span><span class="p">,</span> <span class="n">net_loaded</span><span class="p">,</span> <span class="n">extract</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">&quot;f_load_GHz&quot;</span><span class="p">:</span> <span class="n">f_load</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span>
+            <span class="s2">&quot;Lload&quot;</span><span class="p">:</span> <span class="n">L_load</span><span class="p">,</span>
+            <span class="s2">&quot;Cload&quot;</span><span class="p">:</span> <span class="n">C_load</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">extracted</span><span class="p">,</span>
+        <span class="p">})</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span></div>
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../index.html">
+              <img class="logo" src="../../_static/logo.png" alt="Logo of simpleLOMs"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation index</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+  </body>
+</html>

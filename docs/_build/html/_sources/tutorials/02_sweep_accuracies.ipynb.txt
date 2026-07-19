@@ -1,0 +1,247 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Tutorial 2: Accuracy Sweeps\n",
+    "\n",
+    "This tutorial covers the two sweep layers in the refactored codebase:\n",
+    "\n",
+    "| Module | Use when |\n",
+    "|--------|----------|\n",
+    "| `simpleLOMs.system` | One load configuration; sweep device parameters (e.g. `Cc1`, `Cc2`) |\n",
+    "| `simpleLOMs.load_sweeps` | Same device fit once; sweep many **load frequencies** |\n",
+    "\n",
+    "Both use circle-fit metrics from `analyze_system()`.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import skrf as rf\n",
+    "\n",
+    "from simpleLOMs import (\n",
+    "    CPWParams,\n",
+    "    analyze_system,\n",
+    "    run_accuracy_sweep,\n",
+    "    analyze_system_load_grid,\n",
+    "    run_accuracy_sweep_load_grid,\n",
+    ")\n",
+    "from simpleLOMs.plotting import plot_error_heatmap_trio\n",
+    "\n",
+    "print(\"Imports OK\")\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 1. Shared device setup\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "cpw_params = CPWParams(\n",
+    "    w=11.7e-6, s=5.1e-6, t=0.0, h=500e-6,\n",
+    "    rho=1e-19, ep_r=11.45, has_metal_backside=True, tand=0.0,\n",
+    ")\n",
+    "\n",
+    "freq = rf.Frequency(5e9, 10e9, 300_001, unit=\"Hz\")\n",
+    "\n",
+    "fixed = dict(\n",
+    "    freq=freq,\n",
+    "    d=7e-3,\n",
+    "    Ctog1=1e-14,\n",
+    "    Ctog2=1e-14,\n",
+    "    Lload1=5e-10,\n",
+    "    Cload1=6e-13,\n",
+    "    Lload2=5e-10,\n",
+    "    Cload2=6e-13,\n",
+    "    cpw_params=cpw_params,\n",
+    "    Z0=15,\n",
+    "    analytical_Z0=45.926,\n",
+    "    verbose=False,\n",
+    ")\n",
+    "\n",
+    "load1_freqs_hz = np.array([2.5e9, 3.0e9, 3.5e9])\n",
+    "load2_freqs_hz = np.array([3.5e9, 4.0e9])\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 2. Parameter sweep with `run_accuracy_sweep`\n",
+    "\n",
+    "Each grid point calls `analyze_system()` with **fixed** `Lload1/Cload1/Lload2/Cload2`.\n",
+    "\n",
+    "We use a small `Cc1 \u00d7 Cc2` grid so the notebook runs quickly.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "sweep_params = {\n",
+    "    \"Cc1\": np.linspace(3e-15, 12e-15, 4),\n",
+    "    \"Cc2\": np.linspace(3e-15, 12e-15, 4),\n",
+    "}\n",
+    "\n",
+    "results_grid = run_accuracy_sweep(\n",
+    "    sweep_params=sweep_params,\n",
+    "    fixed_params=fixed,\n",
+    "    skip_errors=True,\n",
+    "    verbose=True,\n",
+    ")\n",
+    "\n",
+    "# Flatten nested grid for plotting helpers\n",
+    "flat = [r for row in results_grid for r in row if r is not None]\n",
+    "print(f\"Collected {len(flat)} successful sweep points\")\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 2a. Heatmap of circle-fit shift errors\n",
+    "\n",
+    "`plot_error_heatmap_trio` expects a 2D nested list of `analyze_system()` result dicts.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "plot_error_heatmap_trio(\n",
+    "    results_grid,\n",
+    "    param1_values=sweep_params[\"Cc1\"],\n",
+    "    param2_values=sweep_params[\"Cc2\"],\n",
+    "    param1_label=\"Cc1\",\n",
+    "    param2_label=\"Cc2\",\n",
+    "    param1_scale=1e15,\n",
+    "    param2_scale=1e15,\n",
+    "    param1_unit=\"fF\",\n",
+    "    param2_unit=\"fF\",\n",
+    "    metric=\"f0_s11\",\n",
+    "    title=\"S11 frequency error vs coupling capacitances\",\n",
+    ")\n",
+    "\n",
+    "# Circle-fit shift errors are stored directly on each result dict\n",
+    "example = flat[0]\n",
+    "print(\"Optimized CF shift errors (%):\", example[\"Optimized shift errors CF (%)\"])\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 3. Load-frequency grid with `load_sweeps`\n",
+    "\n",
+    "When you need to evaluate many `(f_load1, f_load2)` combinations without refitting models each time:\n",
+    "\n",
+    "1. `fit_models_once` (inside `analyze_system_load_grid`) fits CPW + LC models once\n",
+    "2. `evaluate_load_grid` builds loaded networks for every frequency pair\n",
+    "3. Results live in `load_sweep_results` (one dict per load combo)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "load_grid_result = analyze_system_load_grid(\n",
+    "    **fixed,\n",
+    "    Cc1=5e-15,\n",
+    "    Cc2=5e-15,\n",
+    "    load1_freqs_hz=load1_freqs_hz,\n",
+    "    load2_freqs_hz=load2_freqs_hz,\n",
+    ")\n",
+    "\n",
+    "combos = load_grid_result[\"load_sweep_results\"]\n",
+    "print(f\"{len(combos)} load combinations\")\n",
+    "print(\"First combo keys:\", list(combos[0].keys())[:6])\n",
+    "print(\"Optimized CF shift errors:\", combos[0][\"opt_shift_errors_cf\"])\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## 4. Coupling sweep + load grid with `run_accuracy_sweep_load_grid`\n",
+    "\n",
+    "This is the batch workflow used for publication-style accuracy maps. Use `n_jobs>1` for parallel execution on large grids.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "outputs": [],
+   "execution_count": null,
+   "source": [
+    "# Small demo grid \u2014 increase resolution for production runs\n",
+    "sweep_params_lg = {\n",
+    "    \"Cc1\": np.linspace(4e-15, 10e-15, 3),\n",
+    "    \"Cc2\": np.linspace(4e-15, 10e-15, 3),\n",
+    "}\n",
+    "\n",
+    "results_load_grid = run_accuracy_sweep_load_grid(\n",
+    "    sweep_params=sweep_params_lg,\n",
+    "    fixed_params=fixed,\n",
+    "    load1_freqs_hz=load1_freqs_hz,\n",
+    "    load2_freqs_hz=load2_freqs_hz,\n",
+    "    skip_errors=True,\n",
+    "    verbose=True,\n",
+    "    n_jobs=1,\n",
+    ")\n",
+    "\n",
+    "flat_lg = [r for row in results_load_grid for r in row if r is not None]\n",
+    "print(f\"Collected {len(flat_lg)} Cc points\")\n",
+    "print(\"Example nested load combos:\", len(flat_lg[0][\"load_sweep_results\"]))\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "## Notes\n",
+    "\n",
+    "- Flat `analyze_system()` results expose human-readable keys like `\"Optimized shift errors CF (%)\"`.\n",
+    "- Nested `load_sweep_results` entries use snake_case keys like `opt_shift_errors_cf`.\n",
+    "- `figure_graphs.py` accepts **both** schemas when building heatmaps from saved JSON.\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "pygments_lexer": "ipython3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
