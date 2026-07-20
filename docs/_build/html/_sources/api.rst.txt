@@ -6,13 +6,14 @@ This page documents the public API of **simpleLOMs**.
 Package
 -------
 
+Top-level re-exports are documented under the submodule sections below
+(to avoid duplicate Sphinx object descriptions).
+
 .. automodule:: simpleLOMs
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   :no-members:
 
 Parameters
----------
+----------
 
 .. automodule:: simpleLOMs.params
    :members:
@@ -38,7 +39,22 @@ Analysis
 Models
 ------
 
-.. automodule:: simpleLOMs.models
+.. automodule:: simpleLOMs.models.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.models.foster_fit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.models.optimized_fit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.models.analytical_fit
    :members:
    :undoc-members:
    :show-inheritance:
@@ -64,6 +80,21 @@ Networks
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: simpleLOMs.networks.chain
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.networks.hanger
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.models.hanger_optimized_fit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Plotting
 --------
 
@@ -76,6 +107,35 @@ Sweeps
 ------
 
 .. automodule:: simpleLOMs.sweeps
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Readout
+-------
+
+.. automodule:: simpleLOMs.readout
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Schematics
+----------
+
+Optional circuit-diagram generation (import ``simpleLOMs.schematics``; not
+re-exported from the top-level package).
+
+.. automodule:: simpleLOMs.schematics
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.schematics.netlist
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simpleLOMs.schematics.builders
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,176 +1,508 @@
-<!DOCTYPE html>
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="Installation" href="install.html">
+        <link rel="prefetch" href="_static/logo-light.png" as="image">
+        <link rel="prefetch" href="_static/logo-dark.png" as="image">
 
-<html lang="en" data-content_root="./">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="shortcut icon" href="_static/logo-light.png"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
+        <title>simpleLOMs</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=fa7b744d" />
+    
+    
 
-    <title>simpleLOMs &#8212; simpleLOMs</title>
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d7e2fa82" />
-    <link rel="stylesheet" type="text/css" href="_static/nameko.css?v=2296cfae" />
-    <script src="_static/documentation_options.js?v=01f34227"></script>
-    <script src="_static/doctools.js?v=9a2dae69"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
-    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <link rel="icon" href="_static/logo.png"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Installation" href="install.html" />
-   
-  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
-  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
-  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
 
-  </head><body>
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  --color-brand-primary: #0e7490;
+  --color-brand-content: #0e7490;
+  --color-brand-visited: #7c3aed;
+  --color-background-secondary: #f6f9fb;
+  --color-api-name: #0e7490;
+  --color-api-pre-name: #7c3aed;
+  --color-highlight-on-target: #e0f2fe;
+  --font-stack: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-stack--monospace: 'JetBrains Mono', 'SF Mono', 'Fira Code', Menlo, Consolas, monospace;
   
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #22d3ee;
+  --color-brand-content: #38bdf8;
+  --color-brand-visited: #a78bfa;
+  --color-background-primary: #0b0f14;
+  --color-background-secondary: #0f151c;
+  --color-background-hover: #151d27;
+  --color-api-name: #22d3ee;
+  --color-api-pre-name: #a78bfa;
+  --color-highlight-on-target: #13303a;
   
-  <div class="indexwrapper">
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #22d3ee;
+  --color-brand-content: #38bdf8;
+  --color-brand-visited: #a78bfa;
+  --color-background-primary: #0b0f14;
+  --color-background-secondary: #0f151c;
+  --color-background-hover: #151d27;
+  --color-api-name: #22d3ee;
+  --color-api-pre-name: #a78bfa;
+  --color-highlight-on-target: #13303a;
   
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
 
-    <div class="related" role="navigation" aria-label="Related">
-      <h3>Navigation</h3>
-      <ul>
-        <li class="right" style="margin-right: 10px">
-          <a href="genindex.html" title="General Index"
-             accesskey="I">index</a></li>
-        <li class="right" >
-          <a href="py-modindex.html" title="Python Module Index"
-             >modules</a> |</li>
-        <li class="right" >
-          <a href="install.html" title="Installation"
-             accesskey="N">next</a> |</li>
-        <li class="nav-item nav-item-0"><a href="#">simpleLOMs</a> &#187;</li>
-        <li class="nav-item nav-item-this"><a href="">simpleLOMs</a></li> 
-      </ul>
-    </div>  
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
 
-    <div class="document">
-      <div class="documentwrapper">
-        <div class="bodywrapper">
-          <div class="body" role="main">
-            
-  <a class="reference internal image-reference" href="_images/logo.png"><img alt="_images/logo.png" class="align-center" src="_images/logo.png" style="width: 200px;" />
-</a>
-<section id="simpleloms">
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="#"><div class="brand">simpleLOMs</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="#">
+  <div class="sidebar-logo-container">
+    <img class="sidebar-logo only-light" src="_static/logo-light.png" alt="Light Logo"/>
+    <img class="sidebar-logo only-dark" src="_static/logo-dark.png" alt="Dark Logo"/>
+  </div>
+  
+  <span class="sidebar-brand-text">simpleLOMs</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="tutorials/index.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/01_fit_lc_models.html">Tutorial 1: Fitting LC Models to a CPW</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/02_ranking_and_loaded_shifts.html">Tutorial 2: Ranking LOMs and Predicting Loaded Shifts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/03_resonator_networks.html">Tutorial 3: Making Resonator Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/04_cpw_parameter_sweeps.html">Tutorial 4: Parameter sweeps of CPW and LOM designs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/05_compare_to_simulations.html">Tutorial 5: Comparing a Circuit Model to a Full-Wave Simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/06_readout_parameters.html">Tutorial 6: From a Lumped Oscillator Model to readout parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/07_design_to_spec.html">Tutorial 7: Designing a CPW resonator to match targets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/08_hanger_resonators.html">Tutorial 8: Fitting a Hanger Resonator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/09_hybrid_series_hanger.html">Tutorial 9: Hybrid Series + Hanger Resonators</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="citation.html">Citation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release_logs.html">Release Logs</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/elizabethkunz/simpleLOMs">GitHub</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dornsife.usc.edu/lfl/">LFL Lab ✌️</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/index.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="simpleloms">
 <h1>simpleLOMs<a class="headerlink" href="#simpleloms" title="Link to this heading">¶</a></h1>
-<p><strong>Simple Lumped Oscillator Models</strong> for superconducting quantum device design.</p>
-<p>This package provides an easy way to extract <strong>effective lumped oscillator models</strong>, known as lumped element models,
-for distributed elements in superconducting quantum device design.
-In superconducting quantum device design, finite element electromagnetic (FEM)
-simulations are required throughout the design process. These are both
-computationally intensive and time-consuming. <strong>Lumped oscillator models (LOMs)</strong>
-allow for modular FEM simulations of superconducting device designs that can then
-be combined in an effective circuit model. These lumped circuit models are easily
-translated into circuit Hamiltonians. However, accurately incorporating the
-effects of distributed elements such as transmission line resonators is a challenge.</p>
-<p>This package develops and tests a <strong>higher-order effective lumped oscillator model</strong>
-for a coplanar waveguide (CPW) resonator coupled to arbitrary loads. The LOM uses
-capacitances obtained from FEM simulations of individual circuit elements and
-numerical calculations of distributed element impedances to construct an effective
-lumped resonator for each distributed resonator. Importantly, the model takes into
-account loading on both ends of a transmission line. It shows a significant
-improvement over the baseline LOM in predicting the system’s Hamiltonian
-parameters: resonant frequency, coupling to lossy elements, and coupling to other
-resonant modes.</p>
-<section id="contents">
-<h2>Contents<a class="headerlink" href="#contents" title="Link to this heading">¶</a></h2>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Documentation</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="install.html#install-from-pypi">Install from PyPI</a></li>
-<li class="toctree-l2"><a class="reference internal" href="install.html#install-from-source">Install from source</a></li>
-<li class="toctree-l2"><a class="reference internal" href="install.html#building-the-documentation-locally">Building the documentation locally</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs">Package</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#parameters">Parameters</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.system">System</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.analysis">Analysis</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.models">Models</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.elements">Elements</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.networks.cpw">Networks</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.plotting">Plotting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.sweeps">Sweeps</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#module-simpleLOMs.utils">Utilities</a></li>
-</ul>
-</li>
-</ul>
-</div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/01_fit_lc_models.html">Tutorial 1: Fitting LC Models to a CPW</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/02_sweep_accuracies.html">Tutorial 2: Accuracy Sweeps</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/03_cpw_parameter_sweeps.html">Tutorial 3: CPW Parameter Sweeps with <code class="docutils literal notranslate"><span class="pre">SweepConfig</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/04_compare_to_simulations.html">Tutorial 4: Comparing to EM Simulations (coming soon)</a></li>
-</ul>
-</div>
-</section>
-<section id="indices-and-tables">
-<h2>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading">¶</a></h2>
+<p class="lead">Lumped oscillator models for superconducting quantum circuits.</p>
+<p>The <strong>simpleLOMs</strong> package allows you to quickly generate lumped oscillator models
+of distributed resonators, and directly integrate them into your circuit design.</p>
+<section id="functionality">
+<h2>Functionality<a class="headerlink" href="#functionality" title="Link to this heading">¶</a></h2>
+<section id="lumped-oscillator-models">
+<h3>Lumped oscillator models<a class="headerlink" href="#lumped-oscillator-models" title="Link to this heading">¶</a></h3>
+<p>The <strong>simpleLOMs</strong> package provides a single interface to
+three different lumped oscillator models (LOMs) of a coplanar-waveguide (CPW) resonator. The optimized method is the default method and is the most accurate,
+as it accounts for the loading on both ends of the resonator. The other two methods are
+faster but less accurate, and are provided for comparison and convenience.</p>
+<p>Every lumped model is fit through the same <code class="xref py py-func docutils literal notranslate"><span class="pre">fit_lom()</span></code> call and returns
+an effective <code class="docutils literal notranslate"><span class="pre">(L,</span> <span class="pre">C)</span></code> you can reuse across a coupling sweep:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
-<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
-<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+<li><p><strong>Optimized</strong> — loading-aware and most accurate</p></li>
+<li><p><strong>Foster</strong> — a simple closed form expression commonly used in Black Box Quantization</p></li>
+<li><p><strong>Analytical</strong> — a closed form expression relying on the bare resonance $f_0$</p></li>
+</ul>
+<figure class="align-center" id="id1">
+<a class="landing-figure reference internal image-reference" href="_images/lom_vs_fullwave.png"><img alt="_images/lom_vs_fullwave.png" class="landing-figure" src="_images/lom_vs_fullwave.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Transmission through a strongly asymmetrically coupled resonator. The
+optimized LOM sits on top of the full-wave reference, while the closed-form
+estimate is off by roughly 0.75 GHz, as described in
+<a class="reference internal" href="tutorials/01_fit_lc_models.html"><span class="doc">Tutorial 1</span></a>.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<p>You can create and view circuit-level designs, both using distributed lumped elements and
+using schematics both of the modular lumped designs.</p>
+<figure class="align-center" id="id2">
+<a class="landing-figure reference internal image-reference" href="_images/circuit_schematic.svg"><img alt="_images/circuit_schematic.svg" class="landing-figure" src="_images/circuit_schematic.svg" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">A CPW resonator reduced to lumped elements made using the <strong>simpleLOMs</strong> schematic feature. Learn how to do this for</span><a class="headerlink" href="#id2" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="modular-network-design">
+<h3>Modular network design<a class="headerlink" href="#modular-network-design" title="Link to this heading">¶</a></h3>
+<p>Larger networks can also be split into subsystems containing a single
+distributed element and analyzed. Optimized lumped models can be fit to individual elements in a larger network, and then recombined to form a complete network model.</p>
+<p>This allows you to quickly analyze large networks of resonators without having to fit the entire network at once.</p>
+<figure class="align-center" id="id3">
+<a class="landing-figure reference internal image-reference" href="_images/resonance_spectrum.png"><img alt="_images/resonance_spectrum.png" class="landing-figure" src="_images/resonance_spectrum.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Fit of a network containing three distributed resonators, as described in
+<a class="reference internal" href="tutorials/03_resonator_networks.html"><span class="doc">Tutorial 3</span></a>.</span><a class="headerlink" href="#id3" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<p>These larger networks can also be easily visualized and exported to a schematic representation,
+with the fitted lumped element models replacing the distributed elements.</p>
+<figure class="align-center" id="id4">
+<a class="landing-figure reference internal image-reference" href="_images/hybrid_lc.svg"><img alt="_images/hybrid_lc.svg" class="landing-figure" src="_images/hybrid_lc.svg" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Fitted lumped element models of a network containing both inline and hanging resonators, as described in
+<a class="reference internal" href="tutorials/09_hybrid_series_hanger.html"><span class="doc">Tutorial 9</span></a>.</span><a class="headerlink" href="#id4" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="design-optimization">
+<h3>Design optimization<a class="headerlink" href="#design-optimization" title="Link to this heading">¶</a></h3>
+<p><strong>simpleLOMs</strong> also provides a simple interface to optimize the design of a resonator to hit a target frequency
+and loaded quality factor using circuit-level models.
+This is done by sweeping the resonator length and coupling capacitance, as described in
+<a class="reference internal" href="tutorials/07_design_to_spec.html"><span class="doc">Tutorial 7</span></a>.</p>
+<figure class="align-center" id="id5">
+<a class="landing-figure reference internal image-reference" href="_images/design_optimization.png"><img alt="_images/design_optimization.png" class="landing-figure" src="_images/design_optimization.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Resonant frequency versus resonator length. The design point marks the
+length chosen to hit a target frequency of 7 GHz, as described in
+<a class="reference internal" href="tutorials/07_design_to_spec.html"><span class="doc">Tutorial 7</span></a>.</span><a class="headerlink" href="#id5" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="integration-with-fem-and-touchstone-files">
+<h3>Integration with FEM and Touchstone files<a class="headerlink" href="#integration-with-fem-and-touchstone-files" title="Link to this heading">¶</a></h3>
+<p>The <strong>simpleLOMs</strong> package uses <cite>scikitrf</cite> which can natively read Touchstone files generated from full-wave simulations or measurement.
+This allows you to compare and quickly validate  the lumped oscillator models against full-wave simulations or measured data.</p>
+<figure class="align-center" id="id6">
+<a class="landing-figure reference internal image-reference" href="_images/compare_to_fem.png"><img alt="_images/compare_to_fem.png" class="landing-figure" src="_images/compare_to_fem.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Comparison of a lumped oscillator model against a full-wave simulation, generated using ANSYS HFSS,
+as shown in <a class="reference internal" href="tutorials/05_compare_to_simulations.html"><span class="doc">Tutorial 5</span></a>.</span><a class="headerlink" href="#id6" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+</section>
+<section id="citation">
+<h2>Citation<a class="headerlink" href="#citation" title="Link to this heading">¶</a></h2>
+<p>If you use <strong>simpleLOMs</strong> in your research, please cite:</p>
+<blockquote>
+<div><p>Elizabeth Kunz and Eli Levenson-Falk,
+<em>Simple, rapid black box quantization for superconducting quantum circuits</em>
+(2026).</p>
+</div></blockquote>
+<p>See <a class="reference internal" href="citation.html"><span class="doc">Citation</span></a> for BibTeX and machine-readable <code class="docutils literal notranslate"><span class="pre">CITATION.cff</span></code> metadata.</p>
+</section>
+<section id="quick-links">
+<h2>Quick links<a class="headerlink" href="#quick-links" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="install.html"><span class="doc">Installation</span></a></p></li>
+<li><p><a class="reference internal" href="tutorials/index.html"><span class="doc">Tutorials</span></a></p></li>
+<li><p><a class="reference internal" href="api.html"><span class="doc">API reference</span></a></p></li>
+<li><p><a class="reference internal" href="citation.html"><span class="doc">Citation</span></a></p></li>
 </ul>
 </section>
+<section id="quick-start">
+<h2>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<p>New here? Start with <a class="reference internal" href="install.html"><span class="doc">Installation</span></a>, then walk through
+<a class="reference internal" href="tutorials/01_fit_lc_models.html"><span class="doc">Tutorial 1: Fitting LC Models to a CPW</span></a>. The figures on this page are regenerated by
+<code class="docutils literal notranslate"><span class="pre">notebooks/generate_docs_figures.py</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPWParams</span><span class="p">,</span> <span class="n">fit_lom</span>
+
+<span class="n">cpw</span>  <span class="o">=</span> <span class="n">CPWParams</span><span class="p">(</span><span class="n">ep_r</span><span class="o">=</span><span class="mf">11.45</span><span class="p">)</span>
+<span class="n">freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="mf">4e9</span><span class="p">,</span> <span class="mf">12e9</span><span class="p">,</span> <span class="mi">8001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+
+<span class="c1"># Effective L, C for a 7 mm resonator</span>
+<span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">fit_lom</span><span class="p">(</span><span class="mf">7e-3</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;optimized&quot;</span><span class="p">,</span>
+               <span class="n">Cc1</span><span class="o">=</span><span class="mf">100e-15</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="mf">30e-15</span><span class="p">,</span>
+               <span class="n">Ctog1</span><span class="o">=</span><span class="mf">10e-15</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="mf">10e-15</span><span class="p">,</span>
+               <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="toctree-wrapper compound">
+</div>
+<div class="toctree-wrapper compound">
+</div>
+</section>
 </section>
 
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="install.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Installation</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Elizabeth Kunz
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://dornsife.usc.edu/lfl/" aria-label="Levenson-Falk Lab"><span style="font-weight:600;font-size:0.85rem;">LFL</span></a>
+              <a class="muted-link " href="https://github.com/LFL-Lab" aria-label="LFL Lab GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg></a>
+              <a class="muted-link " href="https://github.com/elizabethkunz/simpleLOMs" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg></a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">simpleLOMs</a><ul>
+<li><a class="reference internal" href="#functionality">Functionality</a><ul>
+<li><a class="reference internal" href="#lumped-oscillator-models">Lumped oscillator models</a></li>
+<li><a class="reference internal" href="#modular-network-design">Modular network design</a></li>
+<li><a class="reference internal" href="#design-optimization">Design optimization</a></li>
+<li><a class="reference internal" href="#integration-with-fem-and-touchstone-files">Integration with FEM and Touchstone files</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#citation">Citation</a></li>
+<li><a class="reference internal" href="#quick-links">Quick links</a></li>
+<li><a class="reference internal" href="#quick-start">Quick start</a><ul>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
 
-            <div class="clearer"></div>
           </div>
         </div>
       </div>
-      <div class="sphinxsidebar" role="navigation" aria-label="Main">
-        <div class="sphinxsidebarwrapper">
-            <p class="logo"><a href="#">
-              <img class="logo" src="_static/logo.png" alt="Logo of simpleLOMs"/>
-            </a></p>
-  <div>
-    <h3><a href="#">Table of Contents</a></h3>
-    <ul>
-<li><a class="reference internal" href="#">simpleLOMs</a><ul>
-<li><a class="reference internal" href="#contents">Contents</a><ul>
-</ul>
-</li>
-<li><a class="reference internal" href="#indices-and-tables">Indices and tables</a></li>
-</ul>
-</li>
-</ul>
-
-  </div><h3>Related Topics</h3>
-<ul>
-  <li><a href="#">Documentation index</a><ul>
-      <li>Next: <a href="install.html" title="next chapter">Installation</a></li>
-  </ul></li>
-</ul>
-  <div role="note" aria-label="source link">
-    <h3>This Page</h3>
-    <ul class="this-page-menu">
-      <li><a href="_sources/index.rst.txt"
-            rel="nofollow">Show Source</a></li>
-    </ul>
-   </div>
-<search id="searchbox" style="display: none" role="search">
-  <h3 id="searchlabel">Quick search</h3>
-    <div class="searchformwrapper">
-    <form class="search" action="search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
-      <input type="submit" value="Go" />
-    </form>
-    </div>
-</search>
-<script>document.getElementById('searchbox').style.display = "block"</script>
-        </div>
-      </div>
-      <div class="clearer"></div>
-    </div>
-  
+      
+      
+    </aside>
   </div>
-  
-  </body>
+</div><script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    </body>
 </html>

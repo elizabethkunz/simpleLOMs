@@ -1,362 +1,1333 @@
-<!DOCTYPE html>
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Tutorial 2: Ranking LOMs and Predicting Loaded Shifts" href="02_ranking_and_loaded_shifts.html"><link rel="prev" title="Tutorials" href="index.html">
+        <link rel="prefetch" href="../_static/logo-light.png" as="image">
+        <link rel="prefetch" href="../_static/logo-dark.png" as="image">
 
-<html lang="en" data-content_root="../">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <title>Tutorial 1: Fitting LC Models to a CPW &#8212; simpleLOMs</title>
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d7e2fa82" />
-    <link rel="stylesheet" type="text/css" href="../_static/nameko.css?v=2296cfae" />
+    <link rel="shortcut icon" href="../_static/logo-light.png"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
+        <title>Tutorial 1: Fitting LC Models to a CPW - simpleLOMs</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
-    <script src="../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../_static/doctools.js?v=9a2dae69"></script>
-    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
-    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <link rel="icon" href="../_static/logo.png"/>
-    <link rel="index" title="Index" href="../genindex.html" />
-    <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Tutorial 2: Accuracy Sweeps" href="02_sweep_accuracies.html" />
-    <link rel="prev" title="API Reference" href="../api.html" />
-   
-  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
-  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Lora:400' rel='stylesheet' type='text/css'>
-  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=fa7b744d" />
+    
+    
 
-  </head><body>
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  --color-brand-primary: #0e7490;
+  --color-brand-content: #0e7490;
+  --color-brand-visited: #7c3aed;
+  --color-background-secondary: #f6f9fb;
+  --color-api-name: #0e7490;
+  --color-api-pre-name: #7c3aed;
+  --color-highlight-on-target: #e0f2fe;
+  --font-stack: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-stack--monospace: 'JetBrains Mono', 'SF Mono', 'Fira Code', Menlo, Consolas, monospace;
   
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #22d3ee;
+  --color-brand-content: #38bdf8;
+  --color-brand-visited: #a78bfa;
+  --color-background-primary: #0b0f14;
+  --color-background-secondary: #0f151c;
+  --color-background-hover: #151d27;
+  --color-api-name: #22d3ee;
+  --color-api-pre-name: #a78bfa;
+  --color-highlight-on-target: #13303a;
   
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #22d3ee;
+  --color-brand-content: #38bdf8;
+  --color-brand-visited: #a78bfa;
+  --color-background-primary: #0b0f14;
+  --color-background-secondary: #0f151c;
+  --color-background-hover: #151d27;
+  --color-api-name: #22d3ee;
+  --color-api-pre-name: #a78bfa;
+  --color-highlight-on-target: #13303a;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
 
-    <div class="related" role="navigation" aria-label="Related">
-      <h3>Navigation</h3>
-      <ul>
-        <li class="right" style="margin-right: 10px">
-          <a href="../genindex.html" title="General Index"
-             accesskey="I">index</a></li>
-        <li class="right" >
-          <a href="../py-modindex.html" title="Python Module Index"
-             >modules</a> |</li>
-        <li class="right" >
-          <a href="02_sweep_accuracies.html" title="Tutorial 2: Accuracy Sweeps"
-             accesskey="N">next</a> |</li>
-        <li class="right" >
-          <a href="../api.html" title="API Reference"
-             accesskey="P">previous</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">simpleLOMs</a> &#187;</li>
-        <li class="nav-item nav-item-this"><a href="">Tutorial 1: Fitting LC Models to a CPW</a></li> 
-      </ul>
-    </div>  
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
 
-    <div class="document">
-      <div class="documentwrapper">
-        <div class="bodywrapper">
-          <div class="body" role="main">
-            
-  <section id="Tutorial-1:-Fitting-LC-Models-to-a-CPW">
-<h1>Tutorial 1: Fitting LC Models to a CPW<a class="headerlink" href="#Tutorial-1:-Fitting-LC-Models-to-a-CPW" title="Link to this heading">¶</a></h1>
-<p>This tutorial walks through the <strong>single-point</strong> workflow in <code class="docutils literal notranslate"><span class="pre">simpleLOMs.system</span></code>.</p>
-<p>You will:</p>
-<ul class="simple">
-<li><p>Define CPW geometry and coupling capacitances</p></li>
-<li><p>Fit Foster, Optimized, and Analytical LC models</p></li>
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> to compare all models against the CPW reference</p></li>
-<li><p>Inspect resonance frequencies, linewidths, and <strong>circle-fit</strong> hybridization shifts</p></li>
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">simpleLOMs</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  <div class="sidebar-logo-container">
+    <img class="sidebar-logo only-light" src="../_static/logo-light.png" alt="Light Logo"/>
+    <img class="sidebar-logo only-dark" src="../_static/logo-dark.png" alt="Dark Logo"/>
+  </div>
+  
+  <span class="sidebar-brand-text">simpleLOMs</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Installation</a></li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Tutorial 1: Fitting LC Models to a CPW</a></li>
+<li class="toctree-l2"><a class="reference internal" href="02_ranking_and_loaded_shifts.html">Tutorial 2: Ranking LOMs and Predicting Loaded Shifts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="03_resonator_networks.html">Tutorial 3: Making Resonator Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="04_cpw_parameter_sweeps.html">Tutorial 4: Parameter sweeps of CPW and LOM designs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="05_compare_to_simulations.html">Tutorial 5: Comparing a Circuit Model to a Full-Wave Simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="06_readout_parameters.html">Tutorial 6: From a Lumped Oscillator Model to readout parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="07_design_to_spec.html">Tutorial 7: Designing a CPW resonator to match targets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="08_hanger_resonators.html">Tutorial 8: Fitting a Hanger Resonator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="09_hybrid_series_hanger.html">Tutorial 9: Hybrid Series + Hanger Resonators</a></li>
 </ul>
-<p><code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> uses reflection circle fits on <strong>S11 and S22</strong> for <span class="math notranslate nohighlight">\(f_0\)</span> and <span class="math notranslate nohighlight">\(\kappa\)</span>, and for loaded-network mode shifts (primary metric: keys ending in <code class="docutils literal notranslate"><span class="pre">CF</span></code>).</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../citation.html">Citation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release_logs.html">Release Logs</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/elizabethkunz/simpleLOMs">GitHub</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dornsife.usc.edu/lfl/">LFL Lab ✌️</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/tutorials/01_fit_lc_models.ipynb.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="Tutorial-1:-Fitting-LC-Models-to-a-CPW">
+<h1>Tutorial 1: Fitting LC Models to a CPW<a class="headerlink" href="#Tutorial-1:-Fitting-LC-Models-to-a-CPW" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">simpleLOMs</span></code> replaces a distributed coplanar-waveguide (CPW) resonator with a single lumped <code class="docutils literal notranslate"><span class="pre">L</span></code>–<code class="docutils literal notranslate"><span class="pre">C</span></code> oscillator that you can drop into a circuit Hamiltonian. This tutorial fits the three models the package ships with to one CPW device and <strong>ranks them against the CPW ground truth</strong>, so you can see why the <em>Optimized</em> model is the default.</p>
+<p>The device here is in the strongly, asymmetrically coupled regime (<span class="math notranslate nohighlight">\(C_{c1}=30\)</span> fF, <span class="math notranslate nohighlight">\(C_{c2}=70\)</span> fF) which allows us to compare the accuracy of the three lumped models in a realistic scenario.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">skrf</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rf</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPWParams</span><span class="p">,</span> <span class="n">FosterFit</span><span class="p">,</span> <span class="n">OptimizedFit</span><span class="p">,</span> <span class="n">AnalyticalFit</span><span class="p">,</span> <span class="n">analyze_system</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.analysis</span><span class="w"> </span><span class="kn">import</span> <span class="n">circle_fit_f0_kappa</span><span class="p">,</span> <span class="n">resonance_from_s_max</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.cpw</span><span class="w"> </span><span class="kn">import</span> <span class="n">cpw_resonator_network_2port</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.plotting</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_re_im</span><span class="p">,</span> <span class="n">plot_lom_vs_data_re_im</span><span class="p">,</span> <span class="n">plot_all_models</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.optimized_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">OptimizationConfig</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_results_table</span><span class="p">,</span> <span class="n">make_params_table</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Imports OK&quot;</span><span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CPWParams</span><span class="p">,</span> <span class="n">FosterFit</span><span class="p">,</span> <span class="n">OptimizedFit</span><span class="p">,</span> <span class="n">AnalyticalFit</span><span class="p">,</span>
+    <span class="n">analyze_system</span><span class="p">,</span> <span class="n">fit_lom</span><span class="p">,</span> <span class="n">utils</span><span class="p">,</span>
+    <span class="n">plot_re_im</span><span class="p">,</span> <span class="n">plot_all_models</span><span class="p">,</span> <span class="n">plot_residuals</span><span class="p">,</span>
+    <span class="n">plot_summary</span><span class="p">,</span> <span class="n">plot_transmission</span><span class="p">,</span> <span class="n">plot_scan</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.networks.cpw</span><span class="w"> </span><span class="kn">import</span> <span class="n">cpw_resonator_network_2port</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.analysis</span><span class="w"> </span><span class="kn">import</span> <span class="n">circle_fit_f0_kappa</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.optimized_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">OptimizationConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.schematics</span><span class="w"> </span><span class="kn">import</span> <span class="n">lc_schematic_2port</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;All imports OK&quot;</span><span class="p">)</span>
 <br/></pre></div>
 </div>
 </div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+All imports OK
+</pre></div></div>
+</div>
 <hr class="docutils" />
-<section id="1.-Device-parameters">
-<h2>1. Device parameters<a class="headerlink" href="#1.-Device-parameters" title="Link to this heading">¶</a></h2>
-<p>Define CPW geometry (<code class="docutils literal notranslate"><span class="pre">CPWParams</span></code>), coupling capacitances, and two LC loads representing qubits or auxiliary resonators.</p>
-<p>In practice, extract <code class="docutils literal notranslate"><span class="pre">Cc1</span></code>, <code class="docutils literal notranslate"><span class="pre">Cc2</span></code>, <code class="docutils literal notranslate"><span class="pre">Ctog1</span></code>, <code class="docutils literal notranslate"><span class="pre">Ctog2</span></code> from your EM solver (HFSS, COMSOL, etc.).</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<section id="1.-Load-your-CPW">
+<h2>1. Load your CPW<a class="headerlink" href="#1.-Load-your-CPW" title="Link to this heading">¶</a></h2>
+<p>The CPW geometry lives in a <code class="docutils literal notranslate"><span class="pre">CPWParams</span></code> dataclass, which is defined once and passed into every function that needs it.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cpw_params</span> <span class="o">=</span> <span class="n">CPWParams</span><span class="p">(</span>
-    <span class="n">w</span><span class="o">=</span><span class="mf">11.7e-6</span><span class="p">,</span>
-    <span class="n">s</span><span class="o">=</span><span class="mf">5.1e-6</span><span class="p">,</span>
-    <span class="n">t</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-    <span class="n">h</span><span class="o">=</span><span class="mf">500e-6</span><span class="p">,</span>
-    <span class="n">rho</span><span class="o">=</span><span class="mf">1e-19</span><span class="p">,</span>
-    <span class="n">ep_r</span><span class="o">=</span><span class="mf">11.45</span><span class="p">,</span>
+    <span class="n">w</span><span class="o">=</span><span class="mf">11.7e-6</span><span class="p">,</span>              <span class="c1"># center-conductor width (m)</span>
+    <span class="n">s</span><span class="o">=</span><span class="mf">5.1e-6</span><span class="p">,</span>               <span class="c1"># gap spacing (m)</span>
+    <span class="n">t</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>                  <span class="c1"># metal thickness — 0 = ideal thin film</span>
+    <span class="n">h</span><span class="o">=</span><span class="mf">500e-6</span><span class="p">,</span>               <span class="c1"># substrate height (m)</span>
+    <span class="n">rho</span><span class="o">=</span><span class="mf">1e-19</span><span class="p">,</span>              <span class="c1"># resistivity ~ 0 -&gt; superconducting limit</span>
+    <span class="n">ep_r</span><span class="o">=</span><span class="mf">11.45</span><span class="p">,</span>             <span class="c1"># relative permittivity (ultracold silicon)</span>
     <span class="n">has_metal_backside</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">tand</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">tand</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>               <span class="c1"># lossless substrate</span>
 <span class="p">)</span>
 
-<span class="n">d</span> <span class="o">=</span> <span class="mf">7.0e-3</span>
-<span class="n">Z0</span> <span class="o">=</span> <span class="mf">15.0</span>
-<span class="n">analytical_Z0</span> <span class="o">=</span> <span class="mf">45.926</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cpw_params</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+CPWParams(w=1.17e-05, s=5.1e-06, t=0.0, h=0.0005, rho=1e-19, ep_r=11.45, has_metal_backside=True, tand=0.0)
+</pre></div></div>
+</div>
+<p>Next we set the circuit-level parameters: the resonator length <code class="docutils literal notranslate"><span class="pre">d</span></code>, the reference (feedline) impedance <code class="docutils literal notranslate"><span class="pre">Z0</span></code>, and the coupling / ground capacitances. In practice we recommend extracting <code class="docutils literal notranslate"><span class="pre">Cc1,</span> <span class="pre">Cc2,</span> <span class="pre">Ctog1,</span> <span class="pre">Ctog2</span></code> from the Maxwell capacitance matrices of your EM solver of choice (e.g. <span class="math notranslate nohighlight">\(\texttt{ANSYS HFSS}\)</span>, <span class="math notranslate nohighlight">\(\texttt{COMSOL}\)</span>).</p>
+<p>A single reference impedance <span class="math notranslate nohighlight">\(Z_0 = 50\,\Omega\)</span> is used throughout the notebook.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">d</span>     <span class="o">=</span> <span class="mf">7.0e-3</span>    <span class="c1"># resonator length (m)</span>
+<span class="n">Z0</span>    <span class="o">=</span> <span class="mf">50.0</span>      <span class="c1"># reference / feedline impedance (ohm) — used everywhere</span>
 
-<span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span> <span class="o">=</span> <span class="mf">3.0e-14</span><span class="p">,</span> <span class="mf">7.0e-14</span>
-<span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span> <span class="o">=</span> <span class="mf">4.0e-14</span><span class="p">,</span> <span class="mf">6.0e-14</span>
-
-<span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span> <span class="o">=</span> <span class="mf">2e-9</span><span class="p">,</span> <span class="mf">6.0e-13</span>
-<span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span> <span class="o">=</span> <span class="mf">4e-9</span><span class="p">,</span> <span class="mf">6.0e-13</span>
+<span class="n">Cc1</span>   <span class="o">=</span> <span class="mf">3.0e-14</span>   <span class="c1"># coupling capacitor, port 1 (F)   -&gt; 30 fF</span>
+<span class="n">Cc2</span>   <span class="o">=</span> <span class="mf">7.0e-14</span>   <span class="c1"># coupling capacitor, port 2 (F)   -&gt; 70 fF  (asymmetric!)</span>
+<span class="n">Ctog1</span> <span class="o">=</span> <span class="mf">4.0e-14</span>   <span class="c1"># shunt-to-ground cap, port 1 (F)</span>
+<span class="n">Ctog2</span> <span class="o">=</span> <span class="mf">6.0e-14</span>   <span class="c1"># shunt-to-ground cap, port 2 (F)</span>
+<br/></pre></div>
+</div>
+</div>
+<p>We may also define load resonators. These are not needed for the initial fit, but they let us check the hybridized frequency shift the model predicts once these loads are attached (Section 3). To approximate the case of a qubit-bus resonator, for example, we pick two loads near a typical qubit frequency (<span class="math notranslate nohighlight">\(3\)</span>–<span class="math notranslate nohighlight">\(5\)</span> GHz).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">Lload1</span> <span class="o">=</span> <span class="mf">2e-09</span>    <span class="c1"># load 1 inductance (H)</span>
+<span class="n">Cload1</span> <span class="o">=</span> <span class="mf">6.0e-13</span>  <span class="c1"># load 1 capacitance (F)</span>
+<span class="n">Lload2</span> <span class="o">=</span> <span class="mf">4e-09</span>    <span class="c1"># load 2 inductance (H)</span>
+<span class="n">Cload2</span> <span class="o">=</span> <span class="mf">6.0e-13</span>  <span class="c1"># load 2 capacitance (F)</span>
 
 <span class="n">f_load1</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Lload1</span> <span class="o">*</span> <span class="n">Cload1</span><span class="p">))</span> <span class="o">/</span> <span class="mf">1e9</span>
 <span class="n">f_load2</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Lload2</span> <span class="o">*</span> <span class="n">Cload2</span><span class="p">))</span> <span class="o">/</span> <span class="mf">1e9</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Load 1 bare resonance: </span><span class="si">{</span><span class="n">f_load1</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Load 2 bare resonance: </span><span class="si">{</span><span class="n">f_load2</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz&quot;</span><span class="p">)</span>
-
-<span class="c1"># Coarse band for initial fitting; analyze_system refines around the CPW resonance</span>
-<span class="n">freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="mf">6e9</span><span class="p">,</span> <span class="mf">9e9</span><span class="p">,</span> <span class="mi">400_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
 <br/></pre></div>
 </div>
 </div>
-<section id="1a.-Inspect-the-unloaded-CPW-network-(optional)">
-<h3>1a. Inspect the unloaded CPW network (optional)<a class="headerlink" href="#1a.-Inspect-the-unloaded-CPW-network-(optional)" title="Link to this heading">¶</a></h3>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Load 1 bare resonance: 4.5944 GHz
+Load 2 bare resonance: 3.2487 GHz
+</pre></div></div>
+</div>
+<p>Finally we choose a coarse frequency grid spanning the resonance. The individual fits below refine their own windows around <span class="math notranslate nohighlight">\(f_0\)</span>.</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cpw</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
-    <span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span> <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="n">f0_s11</span><span class="p">,</span> <span class="n">k_s11</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CPW circle-fit S11: f0=</span><span class="si">{</span><span class="n">f0_s11</span><span class="o">/</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz, kappa=</span><span class="si">{</span><span class="n">k_s11</span><span class="o">/</span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> MHz&quot;</span><span class="p">)</span>
-
-<span class="n">plot_re_im</span><span class="p">(</span><span class="n">cpw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="s2">&quot;re&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;CPW Re(S11)&quot;</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="mf">6e9</span><span class="p">,</span> <span class="mf">9e9</span><span class="p">,</span> <span class="mi">400_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
 <br/></pre></div>
+</div>
+</div>
+<section id="1a.-Inspect-the-CPW-network">
+<h3>1a. Inspect the CPW network<a class="headerlink" href="#1a.-Inspect-the-CPW-network" title="Link to this heading">¶</a></h3>
+<p>Build the 2-port CPW network and read off its resonance with the package’s circle fit.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cpw_net</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+    <span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">f0_s11</span><span class="p">,</span> <span class="n">k_s11</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw_net</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+<span class="n">f0_s22</span><span class="p">,</span> <span class="n">k_s22</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw_net</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CPW  S11:  f0 = </span><span class="si">{</span><span class="n">f0_s11</span><span class="o">/</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz    kappa/2pi = </span><span class="si">{</span><span class="n">k_s11</span><span class="o">/</span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> MHz&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CPW  S22:  f0 = </span><span class="si">{</span><span class="n">f0_s22</span><span class="o">/</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz    kappa/2pi = </span><span class="si">{</span><span class="n">k_s22</span><span class="o">/</span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> MHz&quot;</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+CPW  S11:  f0 = 7.4301 GHz    kappa/2pi = 128.921 MHz
+CPW  S22:  f0 = 7.4302 GHz    kappa/2pi = 128.141 MHz
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cpw_net</span><span class="o">.</span><span class="n">plot_s_db</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_12_0.png" src="../_images/tutorials_01_fit_lc_models_12_0.png" />
+</div>
+</div>
+<p>We can also look at <span class="math notranslate nohighlight">\(\mathrm{Re}(S)\)</span> and <span class="math notranslate nohighlight">\(\mathrm{Im}(S)\)</span> to get a feel for the lineshape.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_re_im</span><span class="p">(</span><span class="n">cpw_net</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;$S_</span><span class="si">{22}</span><span class="s2">$&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_14_0.png" src="../_images/tutorials_01_fit_lc_models_14_0.png" />
 </div>
 </div>
 </section>
 </section>
 <hr class="docutils" />
-<section id="2.-Fit-each-model-individually">
-<h2>2. Fit each model individually<a class="headerlink" href="#2.-Fit-each-model-individually" title="Link to this heading">¶</a></h2>
-<p>Three LC extraction methods are available. Each returns effective <span class="math notranslate nohighlight">\(L\)</span> and <span class="math notranslate nohighlight">\(C\)</span> you can reuse in circuit simulations.</p>
-<section id="2a.-AnalyticalFit">
-<h3>2a. AnalyticalFit<a class="headerlink" href="#2a.-AnalyticalFit" title="Link to this heading">¶</a></h3>
-<p>Closed-form estimate from a specified resonance frequency and characteristic impedance.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<section id="2.-Fitting-each-model-individually">
+<h2>2. Fitting each model individually<a class="headerlink" href="#2.-Fitting-each-model-individually" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">simpleLOMs</span></code> contains three lumped models:</p>
+<ol class="arabic simple">
+<li><p><strong>``AnalyticalFit``</strong> — closed form (for a <span class="math notranslate nohighlight">\(\lambda/2\)</span> resonator)</p></li>
+<li><p><strong>``FosterFit``</strong> — Foster synthesis from the line’s admittance slope (Used in <code class="docutils literal notranslate"><span class="pre">PhysRevLett.108.240502</span></code>).</p></li>
+<li><p><strong>``OptimizedFit``</strong> — our numerical fit of <span class="math notranslate nohighlight">\(L_\mathrm{eff}, C_\mathrm{eff}\)</span> to the CPW <span class="math notranslate nohighlight">\(S\)</span>-parameters, with the coupling capacitors included.</p></li>
+</ol>
+<p>Each model follows the same three-step pattern:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">ModelClass</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>                       <span class="c1"># 1. instantiate</span>
+<span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>                          <span class="c1"># 2. run the fit</span>
+<span class="n">net</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span><span class="n">refined_freq</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>    <span class="c1"># 3. build the fitted network</span>
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">simpleLOMs.models.analytical_fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticalFit</span>
+<p>To rank them fairly we build one CPW reference and score every model against it using <code class="docutils literal notranslate"><span class="pre">circle_fit_f0_kappa</span></code>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># One refined CPW reference; every model is scored against it the same way.</span>
+<span class="n">refined_freq</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="n">f0_s11</span> <span class="o">-</span> <span class="mf">0.5e9</span><span class="p">,</span> <span class="n">f0_s11</span> <span class="o">+</span> <span class="mf">0.5e9</span><span class="p">,</span> <span class="mi">20_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+<span class="n">cpw_ref</span> <span class="o">=</span> <span class="n">cpw_resonator_network_2port</span><span class="p">(</span>
+    <span class="n">refined_freq</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">f0_cpw</span><span class="p">,</span> <span class="n">k_cpw</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">cpw_ref</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CPW ground truth:  f0 = </span><span class="si">{</span><span class="n">f0_cpw</span><span class="o">/</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz    kappa/2pi = </span><span class="si">{</span><span class="n">k_cpw</span><span class="o">/</span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> MHz&quot;</span><span class="p">)</span>
 
-<span class="n">analytical</span> <span class="o">=</span> <span class="n">AnalyticalFit</span><span class="p">()</span>
-<span class="n">analytical</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">f_r</span><span class="o">=</span><span class="n">f0_s11</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">analytical_Z0</span><span class="p">)</span>
-<span class="n">analytical_net</span> <span class="o">=</span> <span class="n">analytical</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">analytical</span><span class="p">)</span>
-<span class="n">plot_lom_vs_data_re_im</span><span class="p">(</span><span class="n">analytical_net</span><span class="p">,</span> <span class="n">cpw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">lom_label</span><span class="o">=</span><span class="s2">&quot;Analytical&quot;</span><span class="p">,</span> <span class="n">data_label</span><span class="o">=</span><span class="s2">&quot;CPW&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">net</span><span class="p">):</span>
+    <span class="s2">&quot;Circle-fit a fitted LOM network and print its signed error vs the CPW.&quot;</span>
+    <span class="n">f0</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">circle_fit_f0_kappa</span><span class="p">(</span><span class="n">net</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">11s</span><span class="si">}</span><span class="s2"> f0 = </span><span class="si">{</span><span class="n">f0</span><span class="o">/</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz  (err </span><span class="si">{</span><span class="p">(</span><span class="n">f0</span><span class="o">-</span><span class="n">f0_cpw</span><span class="p">)</span><span class="o">/</span><span class="n">f0_cpw</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">+.3f</span><span class="si">}</span><span class="s2">%)&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;    kappa/2pi = </span><span class="si">{</span><span class="n">k</span><span class="o">/</span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> MHz  (err </span><span class="si">{</span><span class="p">(</span><span class="n">k</span><span class="o">-</span><span class="n">k_cpw</span><span class="p">)</span><span class="o">/</span><span class="n">k_cpw</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">+.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">f0</span><span class="p">,</span> <span class="n">k</span>
 <br/></pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+CPW ground truth:  f0 = 7.4301 GHz    kappa/2pi = 128.455 MHz
+</pre></div></div>
+</div>
+<section id="2a.-AnalyticalFit">
+<h3>2a. AnalyticalFit<a class="headerlink" href="#2a.-AnalyticalFit" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AnalyticalFit</span></code> uses two closed-form expressions,</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[C_\mathrm{eff} = \frac{\pi}{2\,Z_0^{\mathrm{cpw}}\,\omega_{\lambda/2}}, \qquad
+  L_\mathrm{eff} = \frac{1}{\omega_{\lambda/2}^2\, C_\mathrm{eff}},\]</div>
+</div>
+<p>so it needs an <strong>unloaded</strong> resonance frequency and the CPW <strong>characteristic impedance</strong> <span class="math notranslate nohighlight">\(Z_0^{\mathrm{cpw}}\)</span>. Here <span class="math notranslate nohighlight">\(Z_0^{\mathrm{cpw}} = 45.926\,\Omega\)</span> and the unloaded <span class="math notranslate nohighlight">\(f_r = 8.58\)</span> GHz; both are readable from scikit-rf or TXLine.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">Z0_cpw</span> <span class="o">=</span> <span class="mf">45.926</span>      <span class="c1"># CPW characteristic impedance (geometry) — NOT the 50 ohm ref</span>
+<span class="n">f0_unloaded</span> <span class="o">=</span> <span class="mf">8.58e9</span> <span class="c1"># unloaded lambda/2 resonance</span>
+
+<span class="n">analytical</span> <span class="o">=</span> <span class="n">AnalyticalFit</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>   <span class="c1"># mode=2 -&gt; lambda/2 (default)</span>
+<span class="n">analytical</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">refined_freq</span><span class="p">,</span> <span class="n">f_r</span><span class="o">=</span><span class="n">f0_unloaded</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0_cpw</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">analytical</span><span class="p">)</span>
+
+<span class="n">analytical_net</span> <span class="o">=</span> <span class="n">analytical</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+    <span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="n">reference</span><span class="o">=</span><span class="n">cpw_ref</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">lom_label</span><span class="o">=</span><span class="s2">&quot;AnalyticalFit&quot;</span><span class="p">,</span> <span class="n">data_label</span><span class="o">=</span><span class="s2">&quot;CPW&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">score</span><span class="p">(</span><span class="s2">&quot;Analytical&quot;</span><span class="p">,</span> <span class="n">analytical_net</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+AnalyticalFit(L=5.4234e-10 H, C=6.3445e-13 F, f_r=8.5800 GHz)
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_18_1.png" src="../_images/tutorials_01_fit_lc_models_18_1.png" />
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Analytical  f0 = 7.4892 GHz  (err +0.794%)    kappa/2pi = 120.711 MHz  (err -6.03%)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+(7489157180.047385, 120711475.20221901)
+</pre></div></div>
 </div>
 </section>
 <section id="2b.-FosterFit">
 <h3>2b. FosterFit<a class="headerlink" href="#2b.-FosterFit" title="Link to this heading">¶</a></h3>
-<p>Extracts <span class="math notranslate nohighlight">\(L\)</span> and <span class="math notranslate nohighlight">\(C\)</span> from the admittance slope at resonance (Phys. Rev. Lett. <strong>108</strong>, 240502).</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<p><code class="docutils literal notranslate"><span class="pre">FosterFit</span></code> extracts <code class="docutils literal notranslate"><span class="pre">L</span></code> and <code class="docutils literal notranslate"><span class="pre">C</span></code> from the admittance slope <span class="math notranslate nohighlight">\(\mathrm{d}B/\mathrm{d}\omega\)</span> at the CPW resonance. It needs only the resonator length <code class="docutils literal notranslate"><span class="pre">d</span></code> and the CPW geometry — no measured <span class="math notranslate nohighlight">\(S\)</span>-parameters.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">foster</span> <span class="o">=</span> <span class="n">FosterFit</span><span class="p">(</span><span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">)</span>
 <span class="n">foster</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">)</span>
-<span class="n">foster_net</span> <span class="o">=</span> <span class="n">foster</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">foster</span><span class="p">)</span>
-<span class="n">plot_lom_vs_data_re_im</span><span class="p">(</span><span class="n">foster_net</span><span class="p">,</span> <span class="n">cpw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">lom_label</span><span class="o">=</span><span class="s2">&quot;Foster&quot;</span><span class="p">,</span> <span class="n">data_label</span><span class="o">=</span><span class="s2">&quot;CPW&quot;</span><span class="p">)</span>
+
+<span class="n">foster_net</span> <span class="o">=</span> <span class="n">foster</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+    <span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="n">reference</span><span class="o">=</span><span class="n">cpw_ref</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">lom_label</span><span class="o">=</span><span class="s2">&quot;FosterFit&quot;</span><span class="p">,</span> <span class="n">data_label</span><span class="o">=</span><span class="s2">&quot;CPW&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">score</span><span class="p">(</span><span class="s2">&quot;Foster&quot;</span><span class="p">,</span> <span class="n">foster_net</span><span class="p">)</span>
 <br/></pre></div>
 </div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+FosterFit(L=5.5275e-10 H, C=6.2215e-13 F, f0=8.5824 GHz)
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_20_1.png" src="../_images/tutorials_01_fit_lc_models_20_1.png" />
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Foster      f0 = 7.4736 GHz  (err +0.585%)    kappa/2pi = 122.021 MHz  (err -5.01%)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+(7473615023.54162, 122020731.34065533)
+</pre></div></div>
 </div>
 </section>
 <section id="2c.-OptimizedFit">
 <h3>2c. OptimizedFit<a class="headerlink" href="#2c.-OptimizedFit" title="Link to this heading">¶</a></h3>
-<p>Two-stage numerical optimization against CPW S-parameters. Usually the most accurate.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<p><code class="docutils literal notranslate"><span class="pre">OptimizedFit</span></code> runs two stages of numerical optimisation against the CPW <span class="math notranslate nohighlight">\(S_{11}\)</span> and <span class="math notranslate nohighlight">\(S_{22}\)</span>, with the coupling capacitors held fixed. It takes the CPW network as input.</p>
+<p>The default settings nearly always outperform <code class="docutils literal notranslate"><span class="pre">FosterFit</span></code> and <code class="docutils literal notranslate"><span class="pre">AnalyticalFit</span></code>. When you do want to tune the optimiser, you can change settings in<code class="docutils literal notranslate"><span class="pre">OptimizationConfig</span></code>. THe settings are:</p>
+<ol class="arabic simple">
+<li><p><strong>``w0_window_frac``</strong> — how tightly the Stage-1 scan brackets <span class="math notranslate nohighlight">\(\omega_0\)</span>. Use <span class="math notranslate nohighlight">\(\sim 0.0001\)</span> for <em>localized</em> behaviour at resonance; relax to <span class="math notranslate nohighlight">\(\sim
+0.005\)</span>–<span class="math notranslate nohighlight">\(0.05\)</span> for <em>broadband</em> behaviour across a wide span.</p></li>
+<li><p><strong>``n_w0``</strong> — number of Stage-1 scan points for the initial <span class="math notranslate nohighlight">\(\omega_0\)</span> guess. <span class="math notranslate nohighlight">\(\sim 10\)</span>–<span class="math notranslate nohighlight">\(20\)</span> is plenty (it is refined later).</p></li>
+<li><p><strong>``n_dense``</strong> — number of Stage-1 optimisation points; <span class="math notranslate nohighlight">\(\lesssim 100\)</span> keeps runtime down.</p></li>
+<li><p><strong>``n_widths``</strong> — the Stage-2 window in units of linewidth, e.g. <code class="docutils literal notranslate"><span class="pre">n_widths=3</span></code> fits over <span class="math notranslate nohighlight">\(\pm 3\kappa\)</span> about <span class="math notranslate nohighlight">\(\omega_r\)</span>.</p></li>
+</ol>
+<p>For localized behaviour set <code class="docutils literal notranslate"><span class="pre">w0_window_frac</span></code> <span class="math notranslate nohighlight">\(\sim 0.0001\)</span> and <code class="docutils literal notranslate"><span class="pre">n_widths</span></code> <span class="math notranslate nohighlight">\(\sim 1\)</span>. For broadband behaviour, it is best to relax these both.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span> <span class="o">=</span> <span class="n">OptimizationConfig</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">n_widths</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span> <span class="o">=</span> <span class="n">OptimizationConfig</span><span class="p">(</span>
+    <span class="n">w0_window_frac</span><span class="o">=</span><span class="mf">0.0001</span><span class="p">,</span>
+    <span class="n">n_w0</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">n_dense</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">n_widths</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>       <span class="c1"># set True to watch the least-squares iterations</span>
+<span class="p">)</span>
+
 <span class="n">optimized</span> <span class="o">=</span> <span class="n">OptimizedFit</span><span class="p">(</span><span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">)</span>
 <span class="n">optimized</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
-    <span class="n">freq</span><span class="p">,</span>
-    <span class="n">data_ntw</span><span class="o">=</span><span class="n">cpw</span><span class="p">,</span>
-    <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
-    <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
-    <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span>
-    <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
-    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="n">refined_freq</span><span class="p">,</span> <span class="n">data_ntw</span><span class="o">=</span><span class="n">cpw_ref</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+    <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span> <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="n">opt_net</span> <span class="o">=</span> <span class="n">optimized</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">)</span>
+<span class="n">params</span> <span class="o">=</span> <span class="n">optimized</span><span class="o">.</span><span class="n">get_params</span><span class="p">()</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">optimized</span><span class="p">)</span>
-<span class="n">plot_lom_vs_data_re_im</span><span class="p">(</span><span class="n">opt_net</span><span class="p">,</span> <span class="n">cpw</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">lom_label</span><span class="o">=</span><span class="s2">&quot;Optimized&quot;</span><span class="p">,</span> <span class="n">data_label</span><span class="o">=</span><span class="s2">&quot;CPW&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;L = </span><span class="si">{</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;L&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4e</span><span class="si">}</span><span class="s2"> H    C = </span><span class="si">{</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;C&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4e</span><span class="si">}</span><span class="s2"> F&quot;</span><span class="p">)</span>
+
+<span class="n">optimized_net</span> <span class="o">=</span> <span class="n">optimized</span><span class="o">.</span><span class="n">get_network</span><span class="p">(</span>
+    <span class="n">refined_freq</span><span class="p">,</span> <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="n">reference</span><span class="o">=</span><span class="n">cpw_ref</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">lom_label</span><span class="o">=</span><span class="s2">&quot;OptimizedFit&quot;</span><span class="p">,</span> <span class="n">data_label</span><span class="o">=</span><span class="s2">&quot;CPW&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">score</span><span class="p">(</span><span class="s2">&quot;Optimized&quot;</span><span class="p">,</span> <span class="n">optimized_net</span><span class="p">)</span>
 <br/></pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+OptimizedFit(L=5.9105e-10 H, C=6.7795e-13 F)
+L = 5.9105e-10 H    C = 6.7795e-13 F
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_22_1.png" src="../_images/tutorials_01_fit_lc_models_22_1.png" />
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Optimized   f0 = 7.4302 GHz  (err +0.001%)    kappa/2pi = 127.512 MHz  (err -0.73%)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+(7430198159.717065, 127511817.87388897)
+</pre></div></div>
+</div>
+<p>The optimiser minimises the complex residuals (real and imaginary parts) of <span class="math notranslate nohighlight">\(S_{11}\)</span> and <span class="math notranslate nohighlight">\(S_{22}\)</span> over a window of <span class="math notranslate nohighlight">\(\pm n_\mathrm{widths}\,\kappa\)</span> around each resonance (here we choose <code class="docutils literal notranslate"><span class="pre">n_widths=3</span></code>).</p>
+<p>To confirm that the optimized fit worked, <code class="docutils literal notranslate"><span class="pre">plot_scan</span></code> shows the Stage-1 <span class="math notranslate nohighlight">\(\omega_0\)</span> scan found a clean minimum, and <code class="docutils literal notranslate"><span class="pre">plot_residuals</span></code> shows the leftover <span class="math notranslate nohighlight">\(S\)</span>-parameter mismatch across the band.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_scan</span><span class="p">(</span><span class="n">optimized</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_24_0.png" src="../_images/tutorials_01_fit_lc_models_24_0.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_residuals</span><span class="p">(</span>
+    <span class="n">data_ntw</span><span class="o">=</span><span class="n">cpw_ref</span><span class="p">,</span>
+    <span class="n">lom_networks</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;optimized&quot;</span><span class="p">:</span> <span class="n">optimized_net</span><span class="p">},</span>
+    <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>   <span class="c1"># S11</span>
+    <span class="n">save_path</span><span class="o">=</span><span class="s2">&quot;figures/residuals_s11.pdf&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Saved: figures/residuals_s11.pdf
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_25_1.png" src="../_images/tutorials_01_fit_lc_models_25_1.png" />
+</div>
+</div>
+</section>
+<section id="2d.-Side-by-side-overlay">
+<h3>2d. Side-by-side overlay<a class="headerlink" href="#2d.-Side-by-side-overlay" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">plot_all_models</span></code> puts all four networks on one axes so you can visually rank the methods.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_all_models</span><span class="p">(</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;CPW (reference)&quot;</span><span class="p">:</span> <span class="n">cpw_ref</span><span class="p">,</span>
+        <span class="s2">&quot;Analytical LC&quot;</span><span class="p">:</span>   <span class="n">analytical_net</span><span class="p">,</span>
+        <span class="s2">&quot;Foster LC&quot;</span><span class="p">:</span>       <span class="n">foster_net</span><span class="p">,</span>
+        <span class="s2">&quot;Optimized LC&quot;</span><span class="p">:</span>    <span class="n">optimized_net</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="s2">&quot;re&quot;</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;$\mathrm</span><span class="si">{Re}</span><span class="s2">(S_</span><span class="si">{11}</span><span class="s2">)$&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_27_0.png" src="../_images/tutorials_01_fit_lc_models_27_0.png" />
+</div>
+</div>
+<p>In this regime, the <strong>Optimized</strong> method is the clear winner. Its resonance sits within a few thousandths of a percent of the CPW ground truth and its linewidth within about one percent, while Foster and Analytical drift by roughly half a percent to a percent in frequency and several percent in linewidth. This is exactly the strong, asymmetric-coupling regime (<span class="math notranslate nohighlight">\(C_{c1}=30\)</span> fF, <span class="math notranslate nohighlight">\(C_{c2}=70\)</span> fF) where fitting with the coupling capacitors included is important.</p>
 </section>
 </section>
 <hr class="docutils" />
-<section id="3.-Full-system-analysis-with-analyze_system()">
-<h2>3. Full system analysis with <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code><a class="headerlink" href="#3.-Full-system-analysis-with-analyze_system()" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> runs all three fits, extracts <span class="math notranslate nohighlight">\(f_0\)</span> and <span class="math notranslate nohighlight">\(\kappa\)</span> via <strong>reflection circle fits</strong> on S11/S22, builds loaded networks, and reports hybridization shifts.</p>
-<p>The returned dict includes model objects (<code class="docutils literal notranslate"><span class="pre">cpw_network</span></code>, <code class="docutils literal notranslate"><span class="pre">foster_model</span></code>, …) and scalar metrics.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<section id="3.-Full-system-comparison-in-one-call">
+<h2>3. Full system comparison in one call<a class="headerlink" href="#3.-Full-system-comparison-in-one-call" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code> runs all three fits for you, extracts <span class="math notranslate nohighlight">\(f_0\)</span> and <span class="math notranslate nohighlight">\(\kappa\)</span> from <span class="math notranslate nohighlight">\(S_{11}\)</span> and <span class="math notranslate nohighlight">\(S_{22}\)</span> with circle fits, and, because we pass the loads defined in the beginning, also builds a loaded network and reports the hybridized frequency shifts against the CPW. It returns a <code class="docutils literal notranslate"><span class="pre">results</span></code> dict holding every fitted model, network, and error metric.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">results</span> <span class="o">=</span> <span class="n">analyze_system</span><span class="p">(</span>
-    <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">freq_sys</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">Frequency</span><span class="p">(</span><span class="mf">5e9</span><span class="p">,</span> <span class="mf">10e9</span><span class="p">,</span> <span class="mi">300_001</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;Hz&quot;</span><span class="p">)</span>
+
+<span class="n">results</span> <span class="o">=</span> <span class="n">analyze_system</span><span class="p">(</span>
+    <span class="n">freq</span><span class="o">=</span><span class="n">freq_sys</span><span class="p">,</span>
     <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">,</span>
     <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span>
     <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
     <span class="n">Lload1</span><span class="o">=</span><span class="n">Lload1</span><span class="p">,</span> <span class="n">Cload1</span><span class="o">=</span><span class="n">Cload1</span><span class="p">,</span>
     <span class="n">Lload2</span><span class="o">=</span><span class="n">Lload2</span><span class="p">,</span> <span class="n">Cload2</span><span class="o">=</span><span class="n">Cload2</span><span class="p">,</span>
     <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span>
-    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
-    <span class="n">analytical_Z0</span><span class="o">=</span><span class="n">analytical_Z0</span><span class="p">,</span>
+    <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>                 <span class="c1"># same 50 ohm reference as above</span>
+    <span class="n">analytical_Z0</span><span class="o">=</span><span class="n">Z0_cpw</span><span class="p">,</span>  <span class="c1"># CPW characteristic impedance for the analytical formula</span>
     <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">scalar_keys</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">results</span> <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="s2">&quot;s&quot;</span><span class="p">)]</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">scalar_keys</span><span class="p">)</span><span class="si">}</span><span class="s2"> scalar result keys&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Primary shift metric:&quot;</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;Optimized all shifts CF (GHz)&quot;</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Shift error vs CPW:&quot;</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;Optimized shift errors CF (%)&quot;</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;analyze_system() complete.&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Result keys:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">results</span>
+                       <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="n">k</span><span class="p">],</span>
+                                         <span class="p">(</span><span class="n">rf</span><span class="o">.</span><span class="n">Network</span><span class="p">,</span> <span class="n">FosterFit</span><span class="p">,</span> <span class="n">OptimizedFit</span><span class="p">,</span> <span class="n">AnalyticalFit</span><span class="p">))][:</span><span class="mi">12</span><span class="p">],</span> <span class="s2">&quot;...&quot;</span><span class="p">)</span>
 <br/></pre></div>
 </div>
 </div>
-<section id="3a.-Summary-tables">
-<h3>3a. Summary tables<a class="headerlink" href="#3a.-Summary-tables" title="Link to this heading">¶</a></h3>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+analyze_system() complete.
+Result keys: [&#39;Z0 (Ohms)&#39;, &#39;Cc1 (F)&#39;, &#39;Cc2 (F)&#39;, &#39;Ctog1 (F)&#39;, &#39;Ctog2 (F)&#39;, &#39;Optimized L (H)&#39;, &#39;Optimized C (F)&#39;, &#39;Foster L (H)&#39;, &#39;Foster C (F)&#39;, &#39;Analytical L (H)&#39;, &#39;Analytical C (F)&#39;, &#39;CPW f0 S11 (GHz)&#39;] ...
+</pre></div></div>
+</div>
+<section id="3a.-Results-as-tables">
+<h3>3a. Results as tables<a class="headerlink" href="#3a.-Results-as-tables" title="Link to this heading">¶</a></h3>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">make_results_table</span><span class="p">(</span><span class="n">results</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">make_params_table</span><span class="p">(</span><span class="n">results</span><span class="p">))</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">utils</span><span class="o">.</span><span class="n">make_results_table</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
 <br/></pre></div>
 </div>
 </div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>f0 S11 (GHz)</th>
+      <th>κ S11 (MHz)</th>
+      <th>f0 S22 (GHz)</th>
+      <th>κ S22 (MHz)</th>
+      <th>f0 error S11 (%)</th>
+      <th>κ error S11 (%)</th>
+      <th>f0 error S22 (%)</th>
+      <th>κ error S22 (%)</th>
+    </tr>
+    <tr>
+      <th>Method</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>CPW</th>
+      <td>7.4301</td>
+      <td>128.4978</td>
+      <td>7.4302</td>
+      <td>128.1283</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>Optimized</th>
+      <td>7.4302</td>
+      <td>127.5310</td>
+      <td>7.4303</td>
+      <td>127.1505</td>
+      <td>-0.0009</td>
+      <td>0.7524</td>
+      <td>-0.0011</td>
+      <td>0.7631</td>
+    </tr>
+    <tr>
+      <th>Foster</th>
+      <td>7.4736</td>
+      <td>122.0642</td>
+      <td>7.4736</td>
+      <td>121.6878</td>
+      <td>-0.5846</td>
+      <td>5.0068</td>
+      <td>-0.5847</td>
+      <td>5.0266</td>
+    </tr>
+    <tr>
+      <th>Analytical</th>
+      <td>7.4910</td>
+      <td>120.8367</td>
+      <td>7.4910</td>
+      <td>120.4568</td>
+      <td>-0.8189</td>
+      <td>5.9620</td>
+      <td>-0.8190</td>
+      <td>5.9873</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">utils</span><span class="o">.</span><span class="n">make_params_table</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>L (H)</th>
+      <th>C (F)</th>
+    </tr>
+    <tr>
+      <th>Model</th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Foster</th>
+      <td>5.527729e-10</td>
+      <td>6.221275e-13</td>
+    </tr>
+    <tr>
+      <th>Optimized</th>
+      <td>5.909357e-10</td>
+      <td>6.780946e-13</td>
+    </tr>
+    <tr>
+      <th>Analytical</th>
+      <td>5.421902e-10</td>
+      <td>6.342700e-13</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
+</div>
+<p>Here we can see the <code class="docutils literal notranslate"><span class="pre">f0</span> <span class="pre">error</span></code> and <code class="docutils literal notranslate"><span class="pre">kappa</span> <span class="pre">error</span></code> columns for all three models. Optimized is the best performing model, while Foster comes second and Analytical last.</p>
 </section>
-<section id="3b.-Overlay-all-models">
-<h3>3b. Overlay all models<a class="headerlink" href="#3b.-Overlay-all-models" title="Link to this heading">¶</a></h3>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<section id="3b.-Plotting-the-results">
+<h3>3b. Plotting the results<a class="headerlink" href="#3b.-Plotting-the-results" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">results</span></code> dict stores the fitted networks, so you can plot various metrics of interest without rerunning anything.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_summary</span><span class="p">(</span>
+    <span class="n">results</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="s2">&quot;s11&quot;</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;Fit summary&quot;</span><span class="p">,</span>
+    <span class="n">save_path</span><span class="o">=</span><span class="s2">&quot;figures/fit_summary.pdf&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Saved: figures/fit_summary.pdf
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_36_1.png" src="../_images/tutorials_01_fit_lc_models_36_1.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_transmission</span><span class="p">(</span>
+    <span class="n">networks</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;cpw&quot;</span><span class="p">:</span>       <span class="n">results</span><span class="p">[</span><span class="s2">&quot;cpw_network&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;optimized&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;optimized_network&quot;</span><span class="p">],</span>
+    <span class="p">},</span>
+    <span class="n">m</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_37_0.png" src="../_images/tutorials_01_fit_lc_models_37_0.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_all_models</span><span class="p">(</span>
     <span class="p">{</span>
-        <span class="s2">&quot;CPW&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;cpw_network&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;Foster&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;foster_network&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;Optimized&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;optimized_network&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;CPW&quot;</span><span class="p">:</span>        <span class="n">results</span><span class="p">[</span><span class="s2">&quot;cpw_network&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Foster&quot;</span><span class="p">:</span>     <span class="n">results</span><span class="p">[</span><span class="s2">&quot;foster_network&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;Optimized&quot;</span><span class="p">:</span>  <span class="n">results</span><span class="p">[</span><span class="s2">&quot;optimized_network&quot;</span><span class="p">],</span>
         <span class="s2">&quot;Analytical&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;analytical_network&quot;</span><span class="p">],</span>
     <span class="p">},</span>
-    <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-    <span class="n">quantity</span><span class="o">=</span><span class="s2">&quot;re&quot;</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Re(S11) from analyze_system()&quot;</span><span class="p">,</span>
+    <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="s2">&quot;re&quot;</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;$\mathrm</span><span class="si">{Re}</span><span class="s2">(S_</span><span class="si">{11}</span><span class="s2">)$&quot;</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 <br/></pre></div>
 </div>
 </div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_01_fit_lc_models_38_0.png" src="../_images/tutorials_01_fit_lc_models_38_0.png" />
+</div>
+</div>
 </section>
-<section id="3c.-Extract-fitted-parameters-from-model-objects">
-<h3>3c. Extract fitted parameters from model objects<a class="headerlink" href="#3c.-Extract-fitted-parameters-from-model-objects" title="Link to this heading">¶</a></h3>
-<p>Each fitted model exposes <code class="docutils literal notranslate"><span class="pre">.get_params()</span></code> for downstream circuit design.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<section id="3c.-Getting-the-model-parameters">
+<h3>3c. Getting the model parameters<a class="headerlink" href="#3c.-Getting-the-model-parameters" title="Link to this heading">¶</a></h3>
+<p>Call <code class="docutils literal notranslate"><span class="pre">.get_params()</span></code> on any fitted model to pull out its effective <span class="math notranslate nohighlight">\(L_\mathrm{eff}, C_\mathrm{eff}\)</span>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;optimized_model&quot;</span><span class="p">,</span> <span class="s2">&quot;foster_model&quot;</span><span class="p">,</span> <span class="s2">&quot;analytical_model&quot;</span><span class="p">]:</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">get_params</span><span class="p">())</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Optimized :&quot;</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;optimized_model&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get_params</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Foster    :&quot;</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;foster_model&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get_params</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Analytical:&quot;</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;analytical_model&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get_params</span><span class="p">())</span>
 <br/></pre></div>
 </div>
 </div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Optimized : {&#39;L&#39;: 5.90935720745428e-10, &#39;C&#39;: 6.780946352532717e-13, &#39;phase&#39;: None, &#39;scan_results&#39;: array([[4.66341850e+10, 6.40216593e-13, 6.21201366e-10, 1.02637034e-02],
+       [4.66342340e+10, 6.40039754e-13, 6.21348500e-10, 8.13772276e-03],
+       [4.66342831e+10, 6.39861013e-13, 6.21497301e-10, 6.25888651e-03],
+       [4.66343322e+10, 6.39680449e-13, 6.21647706e-10, 4.62690759e-03],
+       [4.66343813e+10, 6.39497969e-13, 6.21799797e-10, 3.24149601e-03],
+       [4.66344304e+10, 6.39313689e-13, 6.21953476e-10, 2.10235884e-03],
+       [4.66344795e+10, 6.39127541e-13, 6.22108804e-10, 1.20920020e-03],
+       [4.66345286e+10, 6.38939484e-13, 6.22265818e-10, 5.61721220e-04],
+       [4.66345777e+10, 6.38749587e-13, 6.22424462e-10, 1.59620110e-04],
+       [4.66346268e+10, 6.38557825e-13, 6.22584760e-10, 2.59210091e-06],
+       [4.66346758e+10, 6.38364193e-13, 6.22746718e-10, 9.03294653e-05],
+       [4.66347249e+10, 6.38168689e-13, 6.22910342e-10, 4.22521514e-04],
+       [4.66347740e+10, 6.37971324e-13, 6.23075623e-10, 9.98854594e-04],
+       [4.66348231e+10, 6.37772085e-13, 6.23242576e-10, 1.81901209e-03],
+       [4.66348722e+10, 6.37570967e-13, 6.23411206e-10, 2.88267441e-03],
+       [4.66349213e+10, 6.37368014e-13, 6.23581481e-10, 4.18951900e-03],
+       [4.66349704e+10, 6.37163152e-13, 6.23753465e-10, 5.73922036e-03],
+       [4.66350195e+10, 6.36956460e-13, 6.23927094e-10, 7.53144998e-03],
+       [4.66350686e+10, 6.36747852e-13, 6.24102443e-10, 9.56587642e-03],
+       [4.66351177e+10, 6.36537383e-13, 6.24279469e-10, 1.18421652e-02]])}
+Foster    : {&#39;L&#39;: 5.527728992684269e-10, &#39;C&#39;: 6.221274876932394e-13, &#39;f0_Hz&#39;: 8582366666.666667}
+Analytical: {&#39;L&#39;: 5.421902150176881e-10, &#39;C&#39;: 6.342700237004928e-13, &#39;f_r_Hz&#39;: 8582369343.950997, &#39;Z0&#39;: 45.926}
+</pre></div></div>
+</div>
 </section>
+<section id="3d.-Using-fit_lom-to-get-L,-C-directly">
+<h3>3d. Using <code class="docutils literal notranslate"><span class="pre">fit_lom</span></code> to get <code class="docutils literal notranslate"><span class="pre">L,</span> <span class="pre">C</span></code> directly<a class="headerlink" href="#3d.-Using-fit_lom-to-get-L,-C-directly" title="Link to this heading">¶</a></h3>
+<p>When all you need is the effective <code class="docutils literal notranslate"><span class="pre">L,</span> <span class="pre">C</span></code> for a chosen model, you can use the <code class="docutils literal notranslate"><span class="pre">fit_lom</span></code> function. This is the function used throughout Tutorials 2–6.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">L</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">fit_lom</span><span class="p">(</span>
+    <span class="n">d</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;optimized&quot;</span><span class="p">,</span>
+    <span class="n">Cc1</span><span class="o">=</span><span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="o">=</span><span class="n">Cc2</span><span class="p">,</span> <span class="n">Ctog1</span><span class="o">=</span><span class="n">Ctog1</span><span class="p">,</span> <span class="n">Ctog2</span><span class="o">=</span><span class="n">Ctog2</span><span class="p">,</span>
+    <span class="n">cpw_params</span><span class="o">=</span><span class="n">cpw_params</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">refined_freq</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">f_r</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">L</span> <span class="o">*</span> <span class="n">C</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;fit_lom(optimized):  L = </span><span class="si">{</span><span class="n">L</span><span class="o">*</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> nH    C = </span><span class="si">{</span><span class="n">C</span><span class="o">*</span><span class="mf">1e15</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> fF    f_r = </span><span class="si">{</span><span class="n">f_r</span><span class="o">/</span><span class="mf">1e9</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> GHz&quot;</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+fit_lom(optimized):  L = 0.5909 nH    C = 678.09 fF    f_r = 7.9507 GHz
+</pre></div></div>
+</div>
 </section>
-<hr class="docutils" />
-<section id="Next-steps">
-<h2>Next steps<a class="headerlink" href="#Next-steps" title="Link to this heading">¶</a></h2>
+<section id="3e.-Draw-the-fitted-LC-schematic">
+<h3>3e. Draw the fitted LC schematic<a class="headerlink" href="#3e.-Draw-the-fitted-LC-schematic" title="Link to this heading">¶</a></h3>
+<p>The same <code class="docutils literal notranslate"><span class="pre">L,</span> <span class="pre">C</span></code> drop straight into a schematic. Because <code class="docutils literal notranslate"><span class="pre">OptimizedFit</span></code> folds the ground capacitances into its effective <span class="math notranslate nohighlight">\((L, C)\)</span>, the lumped diagram has <strong>no</strong> <code class="docutils literal notranslate"><span class="pre">Ctog</span></code> — only the coupling capacitors and the parallel LC tank (<code class="docutils literal notranslate"><span class="pre">P1</span> <span class="pre">—</span> <span class="pre">Cc1</span> <span class="pre">—</span> <span class="pre">[LC]</span> <span class="pre">—</span> <span class="pre">Cc2</span> <span class="pre">—</span> <span class="pre">P2</span></code>).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[25]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">figdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;figures&quot;</span><span class="p">)</span>
+<span class="n">figdir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="n">sch_lc</span> <span class="o">=</span> <span class="n">lc_schematic_2port</span><span class="p">(</span>
+    <span class="n">L</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">Cc1</span><span class="p">,</span> <span class="n">Cc2</span><span class="p">,</span> <span class="n">Z0</span><span class="o">=</span><span class="n">Z0</span><span class="p">,</span>
+    <span class="n">annotations</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;L_nH&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">L</span> <span class="o">*</span> <span class="mf">1e9</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="s2">&quot;C_fF&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">C</span> <span class="o">*</span> <span class="mf">1e15</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="s2">&quot;f_r_GHz&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">f_r</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+    <span class="p">},</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Fitted Optimized LOM&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">sch_lc</span><span class="o">.</span><span class="n">save_svg</span><span class="p">(</span><span class="n">figdir</span> <span class="o">/</span> <span class="s2">&quot;fitted_lc.svg&quot;</span><span class="p">)</span>
+<span class="n">sch_lc</span><span class="o">.</span><span class="n">save_html</span><span class="p">(</span><span class="n">figdir</span> <span class="o">/</span> <span class="s2">&quot;fitted_lc.html&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;saved figures/fitted_lc.svg|.html&quot;</span><span class="p">)</span>
+<span class="n">sch_lc</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+saved figures/fitted_lc.svg|.html
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[25]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<iframe srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&#x27;utf-8&#x27;&gt;&lt;title&gt;Fitted Optimized LOM&lt;/title&gt;&lt;meta name=&#x27;viewport&#x27; content=&#x27;width=device-width, initial-scale=1&#x27;&gt;&lt;style&gt;body{margin:0;padding:24px;background:#f6f7f9;color:#14181f;font-family:-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif;}.loms-hint{color:#8b93a1;font-size:12px;margin:10px 2px 0;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div id=&quot;sch_fea846b0&quot; class=&quot;loms-schematic&quot; style=&quot;width:100%;height:360px;overflow:hidden;cursor:grab;background:#ffffff;border:1px solid #e6e8ec;border-radius:10px;&quot;&gt;&lt;svg style=&quot;width:100%;height:100%;display:block&quot;  width=&quot;520&quot; height=&quot;330&quot; viewBox=&quot;0 0 520 330&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot;&gt;&lt;defs&gt;&lt;linearGradient id=&quot;cylBody&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;0&quot; y2=&quot;1&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#fbfcfd&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#dfe4ea&quot;/&gt;&lt;/linearGradient&gt;&lt;linearGradient id=&quot;cylBodyV&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;1&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#fbfcfd&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#dfe4ea&quot;/&gt;&lt;/linearGradient&gt;&lt;/defs&gt;&lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;520&quot; height=&quot;330&quot; fill=&quot;#ffffff&quot;/&gt;&lt;text x=&quot;50&quot; y=&quot;36&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; font-size=&quot;18&quot; font-weight=&quot;700&quot; fill=&quot;#14181f&quot; text-anchor=&quot;start&quot;&gt;Fitted Optimized LOM&lt;/text&gt;&lt;line x1=&quot;76.0&quot; y1=&quot;168.0&quot; x2=&quot;142.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;172.0&quot; y1=&quot;168.0&quot; x2=&quot;340.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;370.0&quot; y1=&quot;168.0&quot; x2=&quot;436.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;circle cx=&quot;68.0&quot; cy=&quot;168&quot; r=&quot;5.5&quot; fill=&quot;#ffffff&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot;/&gt;&lt;text x=&quot;68.0&quot; y=&quot;150.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#14181f&quot; text-anchor=&quot;middle&quot; font-weight=&quot;600&quot;&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;normal&quot;&gt;Port&lt;/tspan&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;normal&quot;&gt;1&lt;/tspan&gt;&lt;/text&gt;&lt;text x=&quot;68.0&quot; y=&quot;196.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#5b6472&quot; text-anchor=&quot;middle&quot; font-weight=&quot;400&quot;&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;5&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;.&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;Ω&lt;/tspan&gt;&lt;/text&gt;&lt;line x1=&quot;142.0&quot; y1=&quot;168.0&quot; x2=&quot;151.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;163.0&quot; y1=&quot;168.0&quot; x2=&quot;172.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;151.0&quot; y1=&quot;155.0&quot; x2=&quot;151.0&quot; y2=&quot;181.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;163.0&quot; y1=&quot;155.0&quot; x2=&quot;163.0&quot; y2=&quot;181.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;text x=&quot;157.0&quot; y=&quot;144.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#14181f&quot; text-anchor=&quot;middle&quot; font-weight=&quot;600&quot;&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;italic&quot;&gt;C&lt;/tspan&gt;&lt;tspan baseline-shift=&quot;-3.9&quot; font-size=&quot;9.4&quot; font-style=&quot;normal&quot;&gt;c1&lt;/tspan&gt;&lt;/text&gt;&lt;text x=&quot;157.0&quot; y=&quot;202.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#5b6472&quot; text-anchor=&quot;middle&quot; font-weight=&quot;400&quot;&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;3&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;.&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;fF&lt;/tspan&gt;&lt;/text&gt;&lt;line x1=&quot;340.0&quot; y1=&quot;168.0&quot; x2=&quot;349.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;361.0&quot; y1=&quot;168.0&quot; x2=&quot;370.0&quot; y2=&quot;168.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;349.0&quot; y1=&quot;155.0&quot; x2=&quot;349.0&quot; y2=&quot;181.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;361.0&quot; y1=&quot;155.0&quot; x2=&quot;361.0&quot; y2=&quot;181.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;text x=&quot;355.0&quot; y=&quot;144.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#14181f&quot; text-anchor=&quot;middle&quot; font-weight=&quot;600&quot;&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;italic&quot;&gt;C&lt;/tspan&gt;&lt;tspan baseline-shift=&quot;-3.9&quot; font-size=&quot;9.4&quot; font-style=&quot;normal&quot;&gt;c2&lt;/tspan&gt;&lt;/text&gt;&lt;text x=&quot;355.0&quot; y=&quot;202.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#5b6472&quot; text-anchor=&quot;middle&quot; font-weight=&quot;400&quot;&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;7&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;.&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;fF&lt;/tspan&gt;&lt;/text&gt;&lt;circle cx=&quot;444.0&quot; cy=&quot;168&quot; r=&quot;5.5&quot; fill=&quot;#ffffff&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot;/&gt;&lt;text x=&quot;444.0&quot; y=&quot;150.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#14181f&quot; text-anchor=&quot;middle&quot; font-weight=&quot;600&quot;&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;normal&quot;&gt;Port&lt;/tspan&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;13.0&quot; font-style=&quot;normal&quot;&gt;2&lt;/tspan&gt;&lt;/text&gt;&lt;text x=&quot;444.0&quot; y=&quot;196.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#5b6472&quot; text-anchor=&quot;middle&quot; font-weight=&quot;400&quot;&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;5&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;.&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;Ω&lt;/tspan&gt;&lt;/text&gt;&lt;circle cx=&quot;256.0&quot; cy=&quot;168&quot; r=&quot;2.6&quot; fill=&quot;#14181f&quot;/&gt;&lt;line x1=&quot;256.0&quot; y1=&quot;168.0&quot; x2=&quot;256.0&quot; y2=&quot;192.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;241.0&quot; y1=&quot;192.0&quot; x2=&quot;271.0&quot; y2=&quot;192.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;241.0&quot; y1=&quot;256.0&quot; x2=&quot;271.0&quot; y2=&quot;256.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;256.0&quot; y1=&quot;256.0&quot; x2=&quot;256.0&quot; y2=&quot;286.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;256.0&quot; y1=&quot;286.0&quot; x2=&quot;256.0&quot; y2=&quot;294.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;246.0&quot; y1=&quot;294.0&quot; x2=&quot;266.0&quot; y2=&quot;294.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;250.0&quot; y1=&quot;299.0&quot; x2=&quot;262.0&quot; y2=&quot;299.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;253.5&quot; y1=&quot;304.0&quot; x2=&quot;258.5&quot; y2=&quot;304.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;path d=&quot;M 241.0 192.0 a 8.0 8.0 0 0 1 0 16.0 a 8.0 8.0 0 0 1 0 16.0 a 8.0 8.0 0 0 1 0 16.0 a 8.0 8.0 0 0 1 0 16.0&quot; fill=&quot;none&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot;/&gt;&lt;line x1=&quot;271.0&quot; y1=&quot;192.0&quot; x2=&quot;271.0&quot; y2=&quot;220.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;262.0&quot; y1=&quot;220.0&quot; x2=&quot;280.0&quot; y2=&quot;220.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;262.0&quot; y1=&quot;228.0&quot; x2=&quot;280.0&quot; y2=&quot;228.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;line x1=&quot;271.0&quot; y1=&quot;228.0&quot; x2=&quot;271.0&quot; y2=&quot;256.0&quot; stroke=&quot;#14181f&quot; stroke-width=&quot;2.0&quot; stroke-linecap=&quot;round&quot;/&gt;&lt;text x=&quot;289.0&quot; y=&quot;216.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#14181f&quot; text-anchor=&quot;start&quot; font-weight=&quot;600&quot;&gt;&lt;tspan font-size=&quot;12.5&quot; font-style=&quot;normal&quot;&gt;LC&lt;/tspan&gt;&lt;/text&gt;&lt;text x=&quot;289.0&quot; y=&quot;232.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#5b6472&quot; text-anchor=&quot;start&quot; font-weight=&quot;400&quot;&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;italic&quot;&gt;L&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;=&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;5&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;9&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;.&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;9&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;4&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;pH&lt;/tspan&gt;&lt;/text&gt;&lt;text x=&quot;289.0&quot; y=&quot;247.0&quot; font-family=&quot;-apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, Helvetica, Arial, sans-serif&quot; fill=&quot;#5b6472&quot; text-anchor=&quot;start&quot; font-weight=&quot;400&quot;&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;italic&quot;&gt;C&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;=&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;6&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;7&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;8&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;.&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;0&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;9&lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt; &lt;/tspan&gt;&lt;tspan font-size=&quot;11.5&quot; font-style=&quot;normal&quot;&gt;fF&lt;/tspan&gt;&lt;/text&gt;&lt;/svg&gt;&lt;/div&gt;&lt;script&gt;
+(function(){
+  var wrap = document.getElementById(&#x27;sch_fea846b0&#x27;);
+  var svg = wrap.querySelector(&#x27;svg&#x27;);
+  var vb = svg.getAttribute(&#x27;viewBox&#x27;).split(/\s+/).map(Number);
+  var base = vb.slice();
+  var view = vb.slice();
+  function apply(){ svg.setAttribute(&#x27;viewBox&#x27;, view.join(&#x27; &#x27;)); }
+  function pt(e){
+    var r = svg.getBoundingClientRect();
+    var w = r.width || svg.clientWidth || view[2];
+    var h = r.height || svg.clientHeight || view[3];
+    return { x: view[0] + (e.clientX - r.left)/w*view[2],
+             y: view[1] + (e.clientY - r.top)/h*view[3] };
+  }
+  wrap.addEventListener(&#x27;wheel&#x27;, function(e){
+    e.preventDefault();
+    var p = pt(e);
+    var k = e.deltaY &lt; 0 ? 0.9 : 1.1;
+    var nw = Math.min(base[2]*8, Math.max(base[2]*0.15, view[2]*k));
+    var nh = nw * base[3]/base[2];
+    view[0] = p.x - (p.x - view[0]) * nw/view[2];
+    view[1] = p.y - (p.y - view[1]) * nh/view[3];
+    view[2] = nw; view[3] = nh; apply();
+  }, {passive:false});
+  var drag=false, last=null;
+  wrap.addEventListener(&#x27;mousedown&#x27;, function(e){ drag=true; last=e; wrap.style.cursor=&#x27;grabbing&#x27;; });
+  window.addEventListener(&#x27;mouseup&#x27;, function(){ drag=false; wrap.style.cursor=&#x27;grab&#x27;; });
+  window.addEventListener(&#x27;mousemove&#x27;, function(e){
+    if(!drag) return;
+    var r = svg.getBoundingClientRect();
+    var w = r.width || svg.clientWidth || view[2];
+    var h = r.height || svg.clientHeight || view[3];
+    view[0] -= (e.clientX-last.clientX)/w*view[2];
+    view[1] -= (e.clientY-last.clientY)/h*view[3];
+    last=e; apply();
+  });
+  wrap.addEventListener(&#x27;dblclick&#x27;, function(){ view=base.slice(); apply(); });
+})();
+&lt;/script&gt;&lt;div class=&#x27;loms-hint&#x27;&gt;scroll to zoom &amp;middot; drag to pan &amp;middot; double-click to reset&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;" style="width:100%;height:380px;border:0;" sandbox="allow-scripts"></iframe></div>
+</div>
+<p>When the coupling is strong and asymmetric, <code class="docutils literal notranslate"><span class="pre">OptimizedFit</span></code> reproduces the distributed response where the closed-form and Foster models cannot, so it is the default everywhere in <code class="docutils literal notranslate"><span class="pre">simpleLOMs</span></code>.</p>
+<p>## Where to go next</p>
 <ul class="simple">
-<li><p><strong>Tutorial 2</strong> — sweep coupling capacitances and load frequencies to map model accuracy (<code class="docutils literal notranslate"><span class="pre">run_accuracy_sweep</span></code>, <code class="docutils literal notranslate"><span class="pre">run_accuracy_sweep_load_grid</span></code>)</p></li>
-<li><p><strong>Tutorial 3</strong> — explore geometry and circuit design with <code class="docutils literal notranslate"><span class="pre">SweepConfig</span></code> (<code class="docutils literal notranslate"><span class="pre">sweeps.py</span></code>)</p></li>
+<li><p><strong>Tutorial 2</strong> extends this single-device ranking across the whole coupling plane.</p></li>
+<li><p><strong>Tutorial 3</strong> shows how to scale up from one resonator to capacitively-coupled chains, reducing each resonator to its fitted LOM.</p></li>
+<li><p><strong>Tutorials 6–7</strong> show how to use the <code class="docutils literal notranslate"><span class="pre">L,</span> <span class="pre">C</span></code> parameters to design a single resonator to meet design targets.</p></li>
 </ul>
 </section>
 </section>
+</section>
 
-
-            <div class="clearer"></div>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="02_ranking_and_loaded_shifts.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Tutorial 2: Ranking LOMs and Predicting Loaded Shifts</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="index.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Tutorials</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Elizabeth Kunz
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://dornsife.usc.edu/lfl/" aria-label="Levenson-Falk Lab"><span style="font-weight:600;font-size:0.85rem;">LFL</span></a>
+              <a class="muted-link " href="https://github.com/LFL-Lab" aria-label="LFL Lab GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg></a>
+              <a class="muted-link " href="https://github.com/elizabethkunz/simpleLOMs" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg></a>
+              
+            </div>
           </div>
         </div>
-      </div>
-      <div class="sphinxsidebar" role="navigation" aria-label="Main">
-        <div class="sphinxsidebarwrapper">
-            <p class="logo"><a href="../index.html">
-              <img class="logo" src="../_static/logo.png" alt="Logo of simpleLOMs"/>
-            </a></p>
-  <div>
-    <h3><a href="../index.html">Table of Contents</a></h3>
-    <ul>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
 <li><a class="reference internal" href="#">Tutorial 1: Fitting LC Models to a CPW</a><ul>
-<li><a class="reference internal" href="#1.-Device-parameters">1. Device parameters</a><ul>
-<li><a class="reference internal" href="#1a.-Inspect-the-unloaded-CPW-network-(optional)">1a. Inspect the unloaded CPW network (optional)</a></li>
+<li><a class="reference internal" href="#1.-Load-your-CPW">1. Load your CPW</a><ul>
+<li><a class="reference internal" href="#1a.-Inspect-the-CPW-network">1a. Inspect the CPW network</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#2.-Fit-each-model-individually">2. Fit each model individually</a><ul>
+<li><a class="reference internal" href="#2.-Fitting-each-model-individually">2. Fitting each model individually</a><ul>
 <li><a class="reference internal" href="#2a.-AnalyticalFit">2a. AnalyticalFit</a></li>
 <li><a class="reference internal" href="#2b.-FosterFit">2b. FosterFit</a></li>
 <li><a class="reference internal" href="#2c.-OptimizedFit">2c. OptimizedFit</a></li>
+<li><a class="reference internal" href="#2d.-Side-by-side-overlay">2d. Side-by-side overlay</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#3.-Full-system-analysis-with-analyze_system()">3. Full system analysis with <code class="docutils literal notranslate"><span class="pre">analyze_system()</span></code></a><ul>
-<li><a class="reference internal" href="#3a.-Summary-tables">3a. Summary tables</a></li>
-<li><a class="reference internal" href="#3b.-Overlay-all-models">3b. Overlay all models</a></li>
-<li><a class="reference internal" href="#3c.-Extract-fitted-parameters-from-model-objects">3c. Extract fitted parameters from model objects</a></li>
+<li><a class="reference internal" href="#3.-Full-system-comparison-in-one-call">3. Full system comparison in one call</a><ul>
+<li><a class="reference internal" href="#3a.-Results-as-tables">3a. Results as tables</a></li>
+<li><a class="reference internal" href="#3b.-Plotting-the-results">3b. Plotting the results</a></li>
+<li><a class="reference internal" href="#3c.-Getting-the-model-parameters">3c. Getting the model parameters</a></li>
+<li><a class="reference internal" href="#3d.-Using-fit_lom-to-get-L,-C-directly">3d. Using <code class="docutils literal notranslate"><span class="pre">fit_lom</span></code> to get <code class="docutils literal notranslate"><span class="pre">L,</span> <span class="pre">C</span></code> directly</a></li>
+<li><a class="reference internal" href="#3e.-Draw-the-fitted-LC-schematic">3e. Draw the fitted LC schematic</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#Next-steps">Next steps</a></li>
 </ul>
 </li>
 </ul>
 
-  </div><h3>Related Topics</h3>
-<ul>
-  <li><a href="../index.html">Documentation index</a><ul>
-      <li>Previous: <a href="../api.html" title="previous chapter">API Reference</a></li>
-      <li>Next: <a href="02_sweep_accuracies.html" title="next chapter">Tutorial 2: Accuracy Sweeps</a></li>
-  </ul></li>
-</ul>
-  <div role="note" aria-label="source link">
-    <h3>This Page</h3>
-    <ul class="this-page-menu">
-      <li><a href="../_sources/tutorials/01_fit_lc_models.ipynb.txt"
-            rel="nofollow">Show Source</a></li>
-    </ul>
-   </div>
-<search id="searchbox" style="display: none" role="search">
-  <h3 id="searchlabel">Quick search</h3>
-    <div class="searchformwrapper">
-    <form class="search" action="../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
-      <input type="submit" value="Go" />
-    </form>
-    </div>
-</search>
-<script>document.getElementById('searchbox').style.display = "block"</script>
+          </div>
         </div>
       </div>
-      <div class="clearer"></div>
-    </div>
-  
-  </body>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    </body>
 </html>

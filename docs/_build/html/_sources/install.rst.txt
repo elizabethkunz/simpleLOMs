@@ -30,10 +30,19 @@ From the repository root:
 
 .. code-block:: bash
 
+   python3 -m pip install -e ".[docs]"
    cd docs
-   rm -rf _build
-   python3 -m pip install --user sphinx nbsphinx sphinx-nameko-theme
-   make html
+   make cleanhtml
    open _build/html/index.html
 
-Notebooks are rendered without execution (see ``nbsphinx_execute`` in ``conf.py``), so you do not need to install **simpleLOMs** in the doc-build environment unless you want to execute cells locally.
+Use ``make cleanhtml`` (not plain ``make html``) whenever you add, remove, or
+rename pages in the toctree — otherwise older pages can keep a stale sidebar.
+
+The ``.[docs]`` install pulls in **simpleLOMs** and its runtime dependencies
+(``numpy``, ``scipy``, ``scikit-rf``, …) plus Sphinx / Furo / nbsphinx.
+Autodoc needs those runtime packages present; without them the API reference
+only documents modules that import with no scientific stack (today, just
+``CPWParams``).
+
+Notebooks are rendered without execution (see ``nbsphinx_execute`` in
+``conf.py``), so cells are not re-run during the doc build.
