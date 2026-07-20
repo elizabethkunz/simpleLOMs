@@ -1,9 +1,9 @@
 cff-version: 1.2.0
-title: "Simple, rapid black box quantization for superconducting quantum circuits"
+title: "Simple lumped element models for superconducting quantum circuits"
 message: "If you use this software, please cite it as below."
 type: software
 version: 0.1.0
-date-released: 2026-06-03
+date-released: 2026-07-19
 authors:
   - given-names: "Elizabeth"
     family-names: "Kunz"
@@ -12,7 +12,7 @@ authors:
   - given-names: "Eli"
     family-names: "Levenson-Falk"
     affiliation: "University of Southern California"
-url: "https://github.com/elizabethkunz/simpleLOMs"
+url: "https://elizabethkunz.github.io/simpleLOMs/"
 repository-code: "https://github.com/elizabethkunz/simpleLOMs"
 license: MIT
 keywords:
@@ -25,5 +25,3 @@ keywords:
   - FEM
 abstract: >
   Simple lumped oscillator models (LOMs) for superconducting quantum device design.
-  We provide methods for extracting several effective LOMs for CPW resonators coupled to arbitrary loads,
-  with an improved fit to predictions of resonant frequency and coupling parameters.
