@@ -326,8 +326,8 @@ compare
     md(r"""
 ## 5. Lumped hybrid schematic
 
-Same `hybrid_schematic_2port`, now with fitted LC tanks (no Ctog on the inline
-block — OptimizedFit absorbs grounds).
+We use the same `hybrid_schematic_2port`, now using fitted LC tanks:
+
 """),
 
     code(r"""

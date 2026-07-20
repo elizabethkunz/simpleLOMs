@@ -10,9 +10,10 @@ pytest-cov
 
 [docs]
 sphinx>=5.0
-sphinx-nameko-theme
+furo
 sphinx-autodoc-typehints
 nbsphinx
+ipython
 
 [notebooks]
 jupyterlab

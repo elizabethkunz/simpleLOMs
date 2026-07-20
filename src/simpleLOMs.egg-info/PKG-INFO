@@ -15,9 +15,10 @@ Requires-Dist: scikit-rf>=0.27
 Requires-Dist: matplotlib>=3.7
 Provides-Extra: docs
 Requires-Dist: sphinx>=5.0; extra == "docs"
-Requires-Dist: sphinx-nameko-theme; extra == "docs"
+Requires-Dist: furo; extra == "docs"
 Requires-Dist: sphinx-autodoc-typehints; extra == "docs"
 Requires-Dist: nbsphinx; extra == "docs"
+Requires-Dist: ipython; extra == "docs"
 Provides-Extra: dev
 Requires-Dist: pytest>=7; extra == "dev"
 Requires-Dist: pytest-cov; extra == "dev"
@@ -26,6 +27,10 @@ Requires-Dist: jupyterlab; extra == "notebooks"
 Requires-Dist: ipykernel; extra == "notebooks"
 Requires-Dist: bokeh; extra == "notebooks"
 Dynamic: license-file
+
+<p align="center">
+  <img src="docs/_static/logo.png" alt="simpleLOMs logo" width="200"/>
+</p>
 
 # simpleLOMs
 

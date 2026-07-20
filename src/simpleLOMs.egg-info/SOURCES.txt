@@ -4,8 +4,10 @@ pyproject.toml
 src/simpleLOMs/__init__.py
 src/simpleLOMs/analysis.py
 src/simpleLOMs/elements.py
+src/simpleLOMs/figure_graphs.py
 src/simpleLOMs/params.py
 src/simpleLOMs/plotting.py
+src/simpleLOMs/readout.py
 src/simpleLOMs/sweeps.py
 src/simpleLOMs/system.py
 src/simpleLOMs/utils.py
@@ -17,6 +19,15 @@ src/simpleLOMs.egg-info/top_level.txt
 src/simpleLOMs/models/analytical_fit.py
 src/simpleLOMs/models/base.py
 src/simpleLOMs/models/foster_fit.py
+src/simpleLOMs/models/hanger_optimized_fit.py
 src/simpleLOMs/models/optimized_fit.py
+src/simpleLOMs/networks/chain.py
 src/simpleLOMs/networks/cpw.py
+src/simpleLOMs/networks/hanger.py
 src/simpleLOMs/networks/lc.py
+src/simpleLOMs/schematics/__init__.py
+src/simpleLOMs/schematics/builders.py
+src/simpleLOMs/schematics/netlist.py
+src/simpleLOMs/schematics/render_svg.py
+src/simpleLOMs/schematics/viewer.py
+tests/test_tutorial_helpers.py

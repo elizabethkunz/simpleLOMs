@@ -12,8 +12,8 @@ This tutorial covers:
      isolates the load physics — a shunt capacitor pulls f0 down.
 
 Runtime note: the expensive primitive is the Optimized fit (~20 s each at these
-couplings). Section 1 does one per grid point (default 4x4 = 16), so the full
-notebook takes ~10 minutes. Sharp (high-Q) weakly-probed resonances are
+couplings). Section 1 does one per grid point (default 3x3 = 9), so the full
+notebook takes ~3 minutes. Sharp (high-Q) weakly-probed resonances are
 measured on a fine local grid — a coarse grid gives a noisy circle-fit f0.
 """
 from __future__ import annotations
@@ -67,12 +67,9 @@ In this tutorial we will see how to:
 
 1. **Rank the accuracy of LOMs.** We rank all three LOMs (**Foster**,
    **Analytical**, and **Optimized**) against the CPW circuit model over a grid of coupling capacitances. 
-2. **Predict a frequency shift from capacitive loads.** We attach capacative loads to a
+2. **Predict a frequency shift from capacitive loads.** We attach capacitive loads to a
    fitted device and check that its `(L, C)` reproduce the shifted CPW
    frequency — not just the bare resonance.
-3. **Predict a frequency shift from resonant loads.** We replace the capacitive load with a
-   resonant LC circuit, and test that a
-   single bare-device fit predicts the correct shifted frequency.
 
 
 This helps you see whether the LOM that you have chosen is capable of standing in for a resonator inside a larger network with arbitrary loads.
@@ -150,14 +147,14 @@ model is anchored to the *bare-line* frequency and *line* impedance printed
 above — the same anchoring Tutorial 1 used — so its errors here are genuinely
 the closed form's, not an artifact of feeding it an already-loaded frequency.
 
-> Note: this is a deliberately small grid (16 Optimized fits) so the notebook
-> executes in about ten minutes. Feel free to increase `N` to map the plane in
+> Note: this is a deliberately small grid (9 Optimized fits) so the notebook
+> executes in about three minutes. Feel free to increase `N` to map the plane in
 > more detail.
 
 """),
 
     code(r"""
-N = 4                                          # grid points per axis (N x N Optimized fits)
+N = 3                                          # grid points per axis (N x N Optimized fits)
 cc = np.geomspace(15e-15, 150e-15, N)
 f0_err = {m: np.full((N, N), np.nan) for m in MODELS}   # [row=Cc2, col=Cc1]
 
@@ -218,10 +215,12 @@ plt.show()
 
     md(r"""
 The **Optimized** method tracks the CPW to a few *thousandths* of a percent
-over essentially the whole plane, while the other two, which do not inherently incorporate the loading, 
-do not. 
+over most of the plane — never worse than $0.06\%$, at the strongly asymmetric
+corners (15 fF against 150 fF) — while the other two, which do not inherently
+incorporate the loading, do not.
 
-We see that the systems perform worst when the system is strongly asymmetric (15 fF against 150 fF) where every model lands around 1–2%.
+The Foster and Analytical errors instead grow with the *total* coupling, reaching
+$\approx 1.5\%$ at the strongest symmetric point (150 fF on both ports).
 
 """),
 
@@ -398,7 +397,7 @@ def build_and_execute():
     )
     nb.cells.insert(0, bootstrap)
 
-    print("Executing notebook (grid + loaded shift — ~10 min)...", flush=True)
+    print("Executing notebook (grid + loaded shift — ~3 min)...", flush=True)
     client = NotebookClient(
         nb,
         timeout=1800,
